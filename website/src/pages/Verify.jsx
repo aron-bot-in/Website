@@ -27,8 +27,8 @@ const statusCopy = {
   flagged: {
     icon: AlertTriangle,
     tone: "text-amber-300",
-    title: "Verified with review",
-    body: "Your account is usable, but staff may review the risk signals before raising your trust level."
+    title: "Flagged for review",
+    body: "This device or network matches another verified account. Staff must review it before player systems unlock."
   },
   quarantined: {
     icon: LockKeyhole,
