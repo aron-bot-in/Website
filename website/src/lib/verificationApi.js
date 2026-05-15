@@ -31,12 +31,17 @@ export async function collectVerificationFingerprint() {
 
 export async function startBackendVerification(token) {
   const fingerprint = await collectVerificationFingerprint();
-  const response = await fetch(apiUrl("/api/verification/start"), {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, fingerprint })
-  });
+  let response;
+  try {
+    response = await fetch(apiUrl("/api/verification/start"), {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, fingerprint })
+    });
+  } catch {
+    throw new Error("Verification server is unreachable. Please try again in a moment.");
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || "Verification could not start.");
   if (!payload.authorizeUrl) throw new Error("Verification API did not return a Discord login URL.");
