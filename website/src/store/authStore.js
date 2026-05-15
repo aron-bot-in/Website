@@ -25,7 +25,9 @@ export const useAuthStore = create((set, get) => ({
     const identity = session?.user || null;
     set({ user: session, identity, loading: false });
     if (session && identity?.discordId) {
-      await syncWebUser(identity).catch((error) => set({ error: error.message }));
+      await syncWebUser(identity).catch((error) => {
+        console.warn("[Auth] Optional web user sync failed:", error);
+      });
     }
   },
   setError: (error) => set({ error, loading: false }),
