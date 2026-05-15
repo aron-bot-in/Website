@@ -54,6 +54,27 @@ function Signal({ icon: Icon, label, value }) {
   );
 }
 
+function VerificationMatches({ matches }) {
+  if (!matches?.length) return null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-left text-sm text-amber-100">
+      <div className="font-black text-white">Matching verification data</div>
+      <div className="mt-2 space-y-2">
+        {matches.map((match, index) => (
+          <div key={`${match.type}-${match.matchedUserId}-${index}`} className="rounded-lg border border-white/10 bg-black/15 p-3">
+            <div className="font-bold text-white">{match.label}</div>
+            <div className="mt-1 text-white/68">{match.detail}</div>
+            <div className="mt-1 text-xs font-semibold text-white/44">
+              Registered player: {match.matchedUsername} ({match.matchedPlayer}) | Discord ID: {match.matchedUserId}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function VerifyMascot() {
   return (
     <div className="relative hidden min-h-[560px] lg:block">
@@ -107,6 +128,7 @@ function ResultView({ attemptId, statusParam }) {
           {result.reasons.join(", ")}
         </div>
       ) : null}
+      <VerificationMatches matches={result?.verificationMatches} />
       {status === "quarantined" ? (
         <Link to="/appeal" className="mt-6 inline-flex">
           <Button icon={Gavel}>Open Appeal</Button>
