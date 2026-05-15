@@ -2,12 +2,12 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import CardTile from "../components/CardTile.jsx";
 import Page from "../components/Page.jsx";
-import { getCardsPage } from "../lib/data.js";
+import { subscribeCardsPage } from "../lib/data.js";
 
 export default function Collection() {
   const [cards, setCards] = useState({});
   const [search, setSearch] = useState("");
-  useEffect(() => { getCardsPage(120).then(setCards); }, []);
+  useEffect(() => subscribeCardsPage(120, setCards), []);
   const shown = useMemo(() => Object.values(cards).filter((card) => `${card.name} ${card.series}`.toLowerCase().includes(search.toLowerCase())).slice(0, 60), [cards, search]);
   return (
     <Page>
