@@ -19,9 +19,6 @@ export default function PublicProfile() {
         <div className="p-6">
           <div className="text-sm font-black uppercase tracking-[0.24em] text-cyan">Public profile</div>
           <h1 className="mt-2 text-4xl font-black">{user.username || `Player ${id}`}</h1>
-          <div className="mt-3 inline-flex rounded-lg border border-cyan/30 bg-cyan/10 px-3 py-1 text-sm font-bold capitalize text-cyan">
-            <BadgeCheck className="mr-2 h-4 w-4" />{data?.security?.status || "unverified"}
-          </div>
         </div>
       </section>
       <div className="grid gap-4 md:grid-cols-3">
