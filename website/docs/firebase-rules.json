@@ -76,6 +76,10 @@
         ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
         ".write": false
       },
+      "verificationDeviceSummaries": {
+        ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
+        ".write": false
+      },
       "verificationIpHashes": {
         ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
         ".write": false
