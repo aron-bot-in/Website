@@ -1,5 +1,4 @@
-import { readFirst, readValue, transaction, updateValue, writeValue } from "./firebase.js";
-import { getDeviceHash, scoreSecurity, sha256Hex } from "./security.js";
+import { isPermissionError, readFirst, readValue, updateValue } from "./firebase.js";
 
 const CACHE_TTL = 60_000;
 const cache = new Map();
@@ -59,7 +58,9 @@ async function readLiveOrSnapshot(path, fallback = null) {
     const value = await readValue(path, undefined);
     if (value !== undefined && value !== null) return value;
   } catch (error) {
-    console.warn(`[Website data] Firebase read failed for ${path}:`, error);
+    if (!isPermissionError(error)) {
+      console.warn(`[Website data] Firebase read failed for ${path}:`, error);
+    }
   }
   return readSnapshotValue(path, fallback);
 }
@@ -95,7 +96,9 @@ async function readCollection(path, limit = 100) {
     const collection = normalizeCollection(value);
     if (Object.keys(collection).length > 0) return collection;
   } catch (error) {
-    console.warn(`[Website data] Firebase collection read failed for ${path}:`, error);
+    if (!isPermissionError(error)) {
+      console.warn(`[Website data] Firebase collection read failed for ${path}:`, error);
+    }
   }
 
   const snapshotValue = await readSnapshotValue(path, {});
@@ -110,16 +113,15 @@ export async function getSiteStats() {
       return { ...EMPTY_STATS, ...snapshotStats };
     }
 
-    const [users, cards, codes, guilds] = await Promise.all([
-      readCollection("users", 500),
+    const [users, cards, guilds] = await Promise.all([
+      readCollection("publicUsers", 500),
       readCollection("cards", 500),
-      readCollection("codes", 5000),
       readCollection("guilds", 500)
     ]);
     return {
       players: Object.keys(normalizeCollection(users)).length,
       cards: Object.keys(normalizeCollection(cards)).length,
-      copies: Object.keys(normalizeCollection(codes)).length,
+      copies: Number(snapshotStats?.copies || 0),
       guilds: Object.keys(normalizeCollection(guilds)).length
     };
   });
@@ -147,15 +149,14 @@ export async function getTopWishlistedCards(limit = 3) {
 export async function getDashboard(discordId) {
   if (!discordId) return null;
   return cached(`dashboard:${discordId}`, async () => {
-    const [user, cards, guilds, security, wishlistLeaderboard] = await Promise.all([
-      readLiveOrSnapshot(`users/${discordId}`),
+    const [user, cards, guilds, wishlistLeaderboard] = await Promise.all([
+      readLiveOrSnapshot(`publicUsers/${discordId}`),
       readCollection("cards", 200),
       readCollection("guilds", 100),
-      readLiveOrSnapshot(`security/${discordId}`),
       getWishlistLeaderboardCounts()
     ]);
     const guild = user?.guildId ? guilds?.[user.guildId] : null;
-    return { user, cards: normalizeCollection(cards), guild, security, wishlistLeaderboard: wishlistLeaderboard || {} };
+    return { user, cards: normalizeCollection(cards), guild, wishlistLeaderboard: wishlistLeaderboard || {} };
   }, 20_000);
 }
 
@@ -192,77 +193,4 @@ export async function syncWebUser(identity) {
   };
   await updateValue(`webUsers/${identity.discordId}`, payload);
   return payload;
-}
-
-export async function verifyToken(rawToken, identity) {
-  const discordId = identity.discordId;
-  if (!rawToken) throw new Error("Missing verification token.");
-  if (!discordId) throw new Error("Discord identity was not available from OAuth.");
-
-  const tokenHash = await sha256Hex(rawToken);
-  const tokenPath = `verificationTokens/${tokenHash}`;
-  const token = await readValue(tokenPath);
-  if (!token) throw new Error("This verification link is invalid or expired.");
-  if (token.status === "superseded") throw new Error("A newer verification link was issued. Please use the latest button from Discord.");
-  if (token.usedAt) throw new Error("This verification link has already been used.");
-  if (Number(token.expiresAt || 0) < Date.now()) throw new Error("This verification link has expired.");
-  if (token.targetUserId && token.targetUserId !== discordId) throw new Error("This link was created for a different Discord account.");
-
-  const session = await readValue(`verificationSessions/${discordId}`, null);
-  if (session?.activeTokenHash && session.activeTokenHash !== tokenHash) {
-    throw new Error("A newer verification link was issued. Please use the latest button from Discord.");
-  }
-
-  const [userRecord, deviceHash] = await Promise.all([
-    readValue(`users/${discordId}`),
-    getDeviceHash()
-  ]);
-  const recentSecurity = await readFirst("meta/accountSecurity/userStatuses", 80);
-  const matchingDevices = Object.values(recentSecurity || {}).filter((entry) => entry?.deviceHash === deviceHash).length;
-  const security = scoreSecurity({ token, discordId, userRecord, matchingDevices });
-  const finalStatus = security.status === "suspicious" ? "quarantined" : security.status;
-  const now = Date.now();
-
-  const tokenResult = await transaction(tokenPath, (current) => {
-    if (!current || current.usedAt || Number(current.expiresAt || 0) < now) return current;
-    return {
-      ...current,
-      usedAt: now,
-      usedBy: discordId,
-      status: finalStatus
-    };
-  });
-  if (!tokenResult?.committed) {
-    throw new Error("This verification link was already used or expired. Please request a fresh one in Discord.");
-  }
-
-  await updateValue(`meta/accountSecurity/userStatuses/${discordId}`, {
-    status: finalStatus,
-    reason: security.notes.join(", "),
-    updatedAt: new Date(now).toISOString(),
-    updatedBy: "website",
-    verifiedAt: finalStatus === "verified" ? now : null,
-    username: identity.username,
-    avatar: identity.avatar,
-    deviceHash,
-    suspicionScore: security.score,
-    tokenHash
-  });
-
-  await updateValue(`verificationSessions/${discordId}`, {
-    activeTokenHash: null,
-    completedAt: now,
-    status: finalStatus,
-    tokenHash
-  });
-
-  await writeValue(`verificationAudit/${discordId}/${tokenHash}`, {
-    at: now,
-    status: finalStatus,
-    score: security.score,
-    notes: security.notes,
-    deviceHash
-  });
-
-  return { status: finalStatus, score: security.score, notes: security.notes };
 }
