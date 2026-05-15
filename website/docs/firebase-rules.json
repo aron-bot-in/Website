@@ -29,8 +29,9 @@
       },
       "webUsers": {
         "$discordId": {
-          ".read": "auth != null && root.child('botData/meta/accountSecurity/userStatuses/' + $discordId + '/status').val() == 'verified'",
-          ".write": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && auth.token.firebase.identities['oidc.discord'][0] == $discordId"
+          ".read": "auth != null && (auth.token.firebase.identities['oidc.discord'][0] == $discordId || root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0]))",
+          ".write": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && auth.token.firebase.identities['oidc.discord'][0] == $discordId",
+          ".validate": "newData.hasChildren(['discordId', 'username', 'lastLoginAt', 'provider']) && newData.child('discordId').val() == $discordId && newData.child('provider').val() == 'discord-oauth2'"
         }
       },
       "verificationTokens": {
@@ -52,6 +53,36 @@
           ".read": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && auth.token.firebase.identities['oidc.discord'][0] == $discordId",
           ".write": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && auth.token.firebase.identities['oidc.discord'][0] == $discordId"
         }
+      },
+      "verificationUsers": {
+        "$discordId": {
+          ".read": "auth != null && (auth.token.firebase.identities['oidc.discord'][0] == $discordId || root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0]))",
+          ".write": false
+        }
+      },
+      "verificationAttemptsByUser": {
+        "$discordId": {
+          ".read": "auth != null && (auth.token.firebase.identities['oidc.discord'][0] == $discordId || root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0]))",
+          ".write": false
+        }
+      },
+      "verificationAttempts": {
+        "$attemptId": {
+          ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
+          ".write": false
+        }
+      },
+      "verificationFingerprints": {
+        ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
+        ".write": false
+      },
+      "verificationIpHashes": {
+        ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
+        ".write": false
+      },
+      "riskEvents": {
+        ".read": "auth != null && root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0])",
+        ".write": false
       },
       "meta": {
         "adminUserIds": {
@@ -87,7 +118,7 @@
             "$discordId": {
               ".read": true,
               ".write": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && (auth.token.firebase.identities['oidc.discord'][0] == $discordId || root.child('botData/meta/adminUserIds').hasChild(auth.token.firebase.identities['oidc.discord'][0]))",
-              ".validate": "newData.child('status').val() == 'verified' || newData.child('status').val() == 'quarantined' || newData.child('status').val() == 'blocked'"
+              ".validate": "newData.val() == null || newData.child('status').val() == 'verified' || newData.child('status').val() == 'flagged' || newData.child('status').val() == 'quarantined' || newData.child('status').val() == 'blocked'"
             }
           },
           "$other": {
