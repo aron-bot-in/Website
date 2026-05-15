@@ -9,6 +9,7 @@ import {
 import { auth } from "./firebase.js";
 
 const RETURN_ROUTE_KEY = "aron.firebaseAuthReturnTo";
+const REDIRECT_RETRY_KEY = "aron.firebaseAuthRedirectRetry";
 const DISCORD_PROVIDER_ID = String(
   import.meta.env.VITE_FIREBASE_DISCORD_PROVIDER_ID
   || import.meta.env.VITE_DISCORD_PROVIDER_ID
@@ -16,6 +17,14 @@ const DISCORD_PROVIDER_ID = String(
 ).trim();
 
 function friendlyAuthError(error) {
+  if (error?.code === "auth/network-request-failed") {
+    const onlineHint = navigator.onLine === false
+      ? "Your browser is currently offline."
+      : "Your browser, network, DNS, VPN, firewall, or an extension blocked Firebase Auth.";
+    return new Error(
+      `${onlineHint} Allow https://identitytoolkit.googleapis.com and ${window.location.origin}, then try Discord login again.`
+    );
+  }
   if (error?.code === "auth/unauthorized-domain") {
     const domain = window.location.hostname;
     return new Error(
@@ -95,6 +104,7 @@ export async function startDiscordLogin() {
     const credential = await signInWithPopup(auth, provider);
     const returnTo = sessionStorage.getItem(RETURN_ROUTE_KEY) || "/";
     sessionStorage.removeItem(RETURN_ROUTE_KEY);
+    sessionStorage.removeItem(REDIRECT_RETRY_KEY);
     restoreRoute(returnTo);
     return { user: normalizeFirebaseUser(credential.user) };
   } catch (error) {
@@ -102,7 +112,13 @@ export async function startDiscordLogin() {
       await signInWithRedirect(auth, provider);
       return null;
     }
+    if (error?.code === "auth/network-request-failed" && !sessionStorage.getItem(REDIRECT_RETRY_KEY)) {
+      sessionStorage.setItem(REDIRECT_RETRY_KEY, "1");
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
     sessionStorage.removeItem(RETURN_ROUTE_KEY);
+    sessionStorage.removeItem(REDIRECT_RETRY_KEY);
     throw friendlyAuthError(error);
   }
 }
@@ -112,6 +128,7 @@ export async function finishDiscordLogin() {
 
   const credential = await getRedirectResult(auth).catch((error) => {
     sessionStorage.removeItem(RETURN_ROUTE_KEY);
+    sessionStorage.removeItem(REDIRECT_RETRY_KEY);
     throw friendlyAuthError(error);
   });
 
@@ -121,7 +138,11 @@ export async function finishDiscordLogin() {
     restoreRoute(returnTo);
   }
 
-  if (credential?.user) return { user: normalizeFirebaseUser(credential.user) };
+  if (credential?.user) {
+    sessionStorage.removeItem(REDIRECT_RETRY_KEY);
+    return { user: normalizeFirebaseUser(credential.user) };
+  }
+  sessionStorage.removeItem(REDIRECT_RETRY_KEY);
 
   return new Promise((resolve) => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -133,5 +154,6 @@ export async function finishDiscordLogin() {
 
 export async function clearDiscordSession() {
   sessionStorage.removeItem(RETURN_ROUTE_KEY);
+  sessionStorage.removeItem(REDIRECT_RETRY_KEY);
   if (auth) await signOut(auth);
 }
