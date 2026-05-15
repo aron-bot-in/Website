@@ -3,13 +3,16 @@ import { useEffect, useState } from "react";
 import CardTile from "../components/CardTile.jsx";
 import Page from "../components/Page.jsx";
 import RequireLogin from "../components/RequireLogin.jsx";
-import { getWishlistData } from "../lib/data.js";
+import { subscribeWishlistData } from "../lib/data.js";
 import { useAuthStore } from "../store/authStore.js";
 
 export default function Wishlist() {
   const { identity } = useAuthStore();
   const [data, setData] = useState(null);
-  useEffect(() => { if (identity?.discordId) getWishlistData(identity.discordId).then(setData); }, [identity?.discordId]);
+  useEffect(() => {
+    if (!identity?.discordId) return undefined;
+    return subscribeWishlistData(identity.discordId, setData);
+  }, [identity?.discordId]);
   return (
     <Page>
       <RequireLogin>
