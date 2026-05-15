@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getDatabase, ref, get, set, update, runTransaction, query, orderByKey, limitToFirst } from "firebase/database";
+import { getDatabase, ref, get, set, update, runTransaction, query, orderByKey, limitToFirst, onValue } from "firebase/database";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -45,6 +45,25 @@ export async function readValue(path, fallback = null) {
   }
 }
 
+export function subscribeValue(path, onNext, onError = null, fallback = null) {
+  if (!database) {
+    onNext?.(fallback);
+    return () => {};
+  }
+
+  return onValue(
+    dbRef(path),
+    (snapshot) => onNext?.(snapshot.exists() ? snapshot.val() : fallback),
+    (error) => {
+      if (isPermissionError(error)) {
+        onNext?.(fallback);
+        return;
+      }
+      onError?.(error);
+    }
+  );
+}
+
 export async function writeValue(path, value) {
   if (!database) throw new Error("Firebase is not configured.");
   await set(dbRef(path), value);
@@ -64,6 +83,25 @@ export async function readFirst(path, amount = 24) {
     if (isPermissionError(error)) return {};
     throw error;
   }
+}
+
+export function subscribeFirst(path, amount = 24, onNext, onError = null) {
+  if (!database) {
+    onNext?.({});
+    return () => {};
+  }
+
+  return onValue(
+    query(dbRef(path), orderByKey(), limitToFirst(amount)),
+    (snapshot) => onNext?.(snapshot.exists() ? snapshot.val() : {}),
+    (error) => {
+      if (isPermissionError(error)) {
+        onNext?.({});
+        return;
+      }
+      onError?.(error);
+    }
+  );
 }
 
 export function transaction(path, mutator) {
