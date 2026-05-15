@@ -1,6 +1,15 @@
 import FingerprintJS from "@fingerprintjs/fingerprintjs";
 
-const API_URL = String(import.meta.env.VITE_VERIFICATION_API_URL || import.meta.env.VITE_API_URL || "").replace(/\/+$/g, "");
+function normalizeApiUrl(value) {
+  const raw = String(value || "").trim().replace(/\/+$/g, "");
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (/^(localhost|127\.0\.0\.1)(:\d+)?/i.test(raw)) return `http://${raw}`;
+  return `https://${raw}`;
+}
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_VERIFICATION_API_URL || import.meta.env.VITE_API_URL);
 
 function apiUrl(path) {
   if (!API_URL) throw new Error("Verification API URL is not configured. Set VITE_VERIFICATION_API_URL.");
