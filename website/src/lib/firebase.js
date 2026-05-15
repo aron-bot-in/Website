@@ -28,10 +28,21 @@ export function dbRef(path = "") {
   return ref(database, dbPath(path));
 }
 
+export function isPermissionError(error) {
+  return error?.code === "PERMISSION_DENIED"
+    || error?.code === "permission-denied"
+    || /permission.?denied/i.test(String(error?.message || ""));
+}
+
 export async function readValue(path, fallback = null) {
   if (!database) return fallback;
-  const snapshot = await get(dbRef(path));
-  return snapshot.exists() ? snapshot.val() : fallback;
+  try {
+    const snapshot = await get(dbRef(path));
+    return snapshot.exists() ? snapshot.val() : fallback;
+  } catch (error) {
+    if (isPermissionError(error)) return fallback;
+    throw error;
+  }
 }
 
 export async function writeValue(path, value) {
@@ -46,8 +57,13 @@ export async function updateValue(path, value) {
 
 export async function readFirst(path, amount = 24) {
   if (!database) return {};
-  const snapshot = await get(query(dbRef(path), orderByKey(), limitToFirst(amount)));
-  return snapshot.exists() ? snapshot.val() : {};
+  try {
+    const snapshot = await get(query(dbRef(path), orderByKey(), limitToFirst(amount)));
+    return snapshot.exists() ? snapshot.val() : {};
+  } catch (error) {
+    if (isPermissionError(error)) return {};
+    throw error;
+  }
 }
 
 export function transaction(path, mutator) {
