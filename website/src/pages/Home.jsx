@@ -6,13 +6,13 @@ import Page from "../components/Page.jsx";
 import Button from "../components/Button.jsx";
 import StatCard from "../components/StatCard.jsx";
 import CardTile from "../components/CardTile.jsx";
-import { getSiteStats, getTopWishlistedCards } from "../lib/data.js";
+import { subscribeSiteStats, subscribeTopWishlistedCards } from "../lib/data.js";
 
 export default function Home() {
   const [stats, setStats] = useState({ players: 0, cards: 0, copies: 0, guilds: 0 });
   const [showcase, setShowcase] = useState([]);
-  useEffect(() => { getSiteStats().then(setStats).catch((error) => console.warn("[Website data] Stats failed:", error)); }, []);
-  useEffect(() => { getTopWishlistedCards(3).then(setShowcase).catch((error) => console.warn("[Website data] Showcase failed:", error)); }, []);
+  useEffect(() => subscribeSiteStats(setStats), []);
+  useEffect(() => subscribeTopWishlistedCards(3, setShowcase), []);
   const activity = [
     ["Verification", "One-click Discord guard", ShieldCheck],
     ["Drops", `${stats.copies || 0} unique copies tracked`, Zap],
