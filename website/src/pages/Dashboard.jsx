@@ -20,7 +20,6 @@ export default function Dashboard() {
   const voteReminderDueAt = Math.min(
     ...[
       user.cooldownReminders?.topggvote?.dueAt,
-      user.cooldownReminders?.discordbotlistvote?.dueAt,
       user.cooldownReminders?.ranktopvote?.dueAt
     ].map(Number).filter((value) => Number.isFinite(value) && value > 0)
   );
