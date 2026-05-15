@@ -23,6 +23,22 @@ export function normalizeCollection(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function buildWishlistCounts(users, cards = null) {
+  const validCardIds = cards ? new Set(Object.keys(normalizeCollection(cards))) : null;
+  const counts = {};
+
+  for (const user of Object.values(normalizeCollection(users))) {
+    const uniqueWishlist = new Set(Array.isArray(user?.wishlist) ? user.wishlist.map(String) : []);
+    for (const cardId of uniqueWishlist) {
+      if (!cardId) continue;
+      if (validCardIds && !validCardIds.has(cardId)) continue;
+      counts[cardId] = Number(counts[cardId] || 0) + 1;
+    }
+  }
+
+  return counts;
+}
+
 function sanitizePublicUser(user, id) {
   const wishlistIsPrivate = Boolean(user?.privacy?.wishlist);
   const inventoryIsPrivate = Boolean(user?.privacy?.inventory);
@@ -107,17 +123,18 @@ export function clearDataCache(prefix = "") {
 }
 
 export async function getWishlistLeaderboardCounts() {
-  const liveCache = await readLiveOrSnapshot("meta/wishlistLeaderboard", {});
-  if (liveCache?.counts && typeof liveCache.counts === "object" && !Array.isArray(liveCache.counts)) {
-    return liveCache.counts;
-  }
+  const [users, cards] = await Promise.all([
+    readCollection("users", 500),
+    readCollection("cards", 500)
+  ]);
+  const counts = buildWishlistCounts(users, cards);
+  if (Object.keys(counts).length > 0) return counts;
 
-  if (liveCache && typeof liveCache === "object" && !Array.isArray(liveCache) && Object.keys(liveCache).length > 0) {
-    return liveCache;
-  }
+  const publicCounts = buildWishlistCounts(await readPublicUsers(500), cards);
+  if (Object.keys(publicCounts).length > 0) return publicCounts;
 
-  const snapshotCounts = await readSnapshotValue("wishlistLeaderboard", {});
-  return snapshotCounts && typeof snapshotCounts === "object" && !Array.isArray(snapshotCounts) ? snapshotCounts : {};
+  const snapshotCounts = normalizeCollection(await readSnapshotValue("wishlistLeaderboard", {}));
+  return snapshotCounts;
 }
 
 async function readCollection(path, limit = 100) {
@@ -249,12 +266,37 @@ export function subscribeGuildsPage(limit = 50, onNext) {
 
 export function subscribeWishlistLeaderboardCounts(onNext) {
   getWishlistLeaderboardCounts().then(onNext).catch(() => {});
-  return subscribeValue("meta/wishlistLeaderboard", (value) => {
-    const counts = value?.counts && typeof value.counts === "object" && !Array.isArray(value.counts)
-      ? value.counts
-      : value;
-    onNext(normalizeCollection(counts));
-  }, (error) => console.warn("[Website data] Wishlist listener failed:", error), {});
+
+  let users = {};
+  let publicUsers = {};
+  let cards = {};
+
+  const emit = () => {
+    const sourceUsers = Object.keys(normalizeCollection(users)).length > 0
+      ? sanitizePublicUsers(users)
+      : publicUsers;
+    onNext(buildWishlistCounts(sourceUsers, cards));
+  };
+
+  const unsubscribers = [
+    subscribeFirst("publicUsers", 500, (value) => {
+      const collection = normalizeCollection(value);
+      if (Object.keys(collection).length > 0) {
+        publicUsers = collection;
+        emit();
+      }
+    }, (error) => console.warn("[Website data] Public wishlist listener failed:", error)),
+    subscribeFirst("users", 500, (value) => {
+      users = normalizeCollection(value);
+      emit();
+    }, (error) => console.warn("[Website data] Wishlist users listener failed:", error)),
+    subscribeFirst("cards", 500, (value) => {
+      cards = normalizeCollection(value);
+      emit();
+    }, (error) => console.warn("[Website data] Wishlist cards listener failed:", error))
+  ];
+
+  return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
 }
 
 export function subscribeSiteStats(onNext) {
