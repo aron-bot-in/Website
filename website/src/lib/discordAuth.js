@@ -9,7 +9,11 @@ import {
 import { auth } from "./firebase.js";
 
 const RETURN_ROUTE_KEY = "aron.firebaseAuthReturnTo";
-const DISCORD_PROVIDER_ID = String(import.meta.env.VITE_FIREBASE_DISCORD_PROVIDER_ID || "oidc.discord").trim();
+const DISCORD_PROVIDER_ID = String(
+  import.meta.env.VITE_FIREBASE_DISCORD_PROVIDER_ID
+  || import.meta.env.VITE_DISCORD_PROVIDER_ID
+  || "oidc.discord"
+).trim();
 
 function friendlyAuthError(error) {
   if (error?.code === "auth/unauthorized-domain") {
