@@ -153,8 +153,14 @@ async function audit(identity, action, details = {}) {
 }
 
 export async function getAdminIds() {
-  const ids = await readValue("meta/adminUserIds", []);
-  return uniqueSorted([...normalizeAdminIds(ids), ...envAdminIds()]);
+  const fallbackIds = envAdminIds();
+  try {
+    const ids = await readValue("meta/adminUserIds", []);
+    return uniqueSorted([...normalizeAdminIds(ids), ...fallbackIds]);
+  } catch (error) {
+    console.warn("[Admin access] database admin list read failed:", error);
+    return fallbackIds;
+  }
 }
 
 export async function isAdminIdentity(identity) {
@@ -164,19 +170,27 @@ export async function isAdminIdentity(identity) {
 }
 
 export async function getAdminOverview() {
-  const [users, cards, codes, guilds, meta] = await Promise.all([
+  const [users, cards, codes, guilds, botBans, disabledCommands, channelDisabledCommands, wishlistLeaderboard] = await Promise.all([
     readFirst("users", 1000),
     readFirst("cards", 1000),
     readFirst("codes", 10000),
     readFirst("guilds", 1000),
-    readValue("meta", {})
+    readValue("meta/botBans", {}),
+    readValue("meta/disabledCommands", []),
+    readValue("meta/channelDisabledCommands", {}),
+    readValue("meta/wishlistLeaderboard", {})
   ]);
   return {
     users: normalizeCollection(users),
     cards: normalizeCollection(cards),
     codes: normalizeCollection(codes),
     guilds: normalizeCollection(guilds),
-    meta: isPlainObject(meta) ? meta : {}
+    meta: {
+      botBans: normalizeCollection(botBans),
+      disabledCommands: Array.isArray(disabledCommands) ? disabledCommands : [],
+      channelDisabledCommands: normalizeCollection(channelDisabledCommands),
+      wishlistLeaderboard: isPlainObject(wishlistLeaderboard) ? wishlistLeaderboard : {}
+    }
   };
 }
 
