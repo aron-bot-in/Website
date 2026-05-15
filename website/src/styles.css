@@ -36,6 +36,14 @@ a {
   backdrop-filter: blur(20px);
 }
 
+.verify-rules-panel {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background:
+    radial-gradient(circle at 50% -12%, rgba(157, 101, 255, 0.14), transparent 18rem),
+    linear-gradient(180deg, rgba(23, 23, 24, 0.94), rgba(16, 16, 18, 0.96));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.38);
+}
+
 .shine {
   position: relative;
   overflow: hidden;
