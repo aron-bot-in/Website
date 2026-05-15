@@ -17,6 +17,14 @@ export default function Dashboard() {
   const cards = data?.cards || {};
   const wallet = user.wallet || {};
   const status = data?.security?.status || "unverified";
+  const voteReminderDueAt = Math.min(
+    ...[
+      user.cooldownReminders?.topggvote?.dueAt,
+      user.cooldownReminders?.discordbotlistvote?.dueAt,
+      user.cooldownReminders?.ranktopvote?.dueAt
+    ].map(Number).filter((value) => Number.isFinite(value) && value > 0)
+  );
+  const voteReminderText = Number.isFinite(voteReminderDueAt) ? fromNow(voteReminderDueAt) : "Not armed";
 
   return (
     <Page>
@@ -48,7 +56,7 @@ export default function Dashboard() {
             <Panel title="Cooldowns" icon={Timer} rows={[
               ["Drop", fromNow(Number(user.lastDropAt || 0) + 30 * 60 * 1000)],
               ["Claim", fromNow(Number(user.lastClaimAt || 0) + 30 * 60 * 1000)],
-              ["Vote reminder", user.cooldownReminders?.topggvote ? fromNow(user.cooldownReminders.topggvote.dueAt) : "Not armed"]
+              ["Vote reminder", voteReminderText]
             ]} />
             <Panel title="Guild" icon={Users} rows={[
               ["Name", data?.guild?.name || "No guild"],
