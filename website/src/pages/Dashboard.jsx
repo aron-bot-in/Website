@@ -4,14 +4,17 @@ import Page from "../components/Page.jsx";
 import RequireLogin from "../components/RequireLogin.jsx";
 import StatCard from "../components/StatCard.jsx";
 import CardTile from "../components/CardTile.jsx";
-import { getDashboard } from "../lib/data.js";
+import { subscribeDashboard } from "../lib/data.js";
 import { fullNumber, fromNow } from "../lib/format.js";
 import { useAuthStore } from "../store/authStore.js";
 
 export default function Dashboard() {
   const { identity } = useAuthStore();
   const [data, setData] = useState(null);
-  useEffect(() => { if (identity?.discordId) getDashboard(identity.discordId).then(setData); }, [identity?.discordId]);
+  useEffect(() => {
+    if (!identity?.discordId) return undefined;
+    return subscribeDashboard(identity.discordId, setData);
+  }, [identity?.discordId]);
   const user = data?.user || {};
   const inventory = Array.isArray(user.inventory) ? user.inventory : [];
   const cards = data?.cards || {};
