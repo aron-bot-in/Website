@@ -16,7 +16,6 @@ export default function Dashboard() {
   const inventory = Array.isArray(user.inventory) ? user.inventory : [];
   const cards = data?.cards || {};
   const wallet = user.wallet || {};
-  const status = data?.security?.status || "unverified";
   const voteReminderDueAt = Math.min(
     ...[
       user.cooldownReminders?.topggvote?.dueAt,
@@ -34,7 +33,7 @@ export default function Dashboard() {
             <h1 className="mt-2 text-4xl font-black">{identity?.username || user.username || "Aron Player"}</h1>
           </div>
           <div className="rounded-lg border border-cyan/30 bg-cyan/10 px-4 py-2 text-sm font-black capitalize text-cyan">
-            <BadgeCheck className="mr-2 inline h-4 w-4" />{status}
+            <BadgeCheck className="mr-2 inline h-4 w-4" />Public profile
           </div>
         </div>
         <section className="grid gap-4 md:grid-cols-4">
@@ -63,9 +62,9 @@ export default function Dashboard() {
               ["Rank", data?.guild ? "Active member" : "Unranked"]
             ]} />
             <Panel title="Security" icon={Shield} rows={[
-              ["Status", status],
-              ["Score", data?.security?.suspicionScore ?? 0],
-              ["Reason", data?.security?.reason || "Clear"]
+              ["Status", "Managed privately"],
+              ["Verification", "Use Discord verification"],
+              ["Appeals", "Use support"]
             ]} />
           </div>
         </section>
