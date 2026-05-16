@@ -10,6 +10,8 @@ const nav = [
   ["Dashboard", "/dashboard"],
   ["Collection", "/collection"],
   ["Wishlist", "/wishlist"],
+  ["Cosmetics", "/cosmetics"],
+  ["Guide", "/guide"],
   ["Guilds", "/guilds"],
   ["Verify", "/verify"]
 ];
@@ -41,8 +43,8 @@ export default function AppShell({ children }) {
               <Sparkles className="h-5 w-5 text-cyan" />
             </div>
             <div>
-              <div className="text-lg font-black tracking-wide">Aron</div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan/80">Collection Nexus</div>
+              <div className="text-lg font-black tracking-wide">ARON</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-rose/80">Card Atelier</div>
             </div>
           </Link>
           <nav className="hidden items-center gap-1 lg:flex">
@@ -93,7 +95,7 @@ export default function AppShell({ children }) {
       </motion.main>
       <footer className="relative z-10 border-t border-white/10 px-4 py-8 text-center text-sm text-white/50">
         <ShieldCheck className="mx-auto mb-3 h-5 w-5 text-cyan" />
-        Aron uses Firebase client rules, Discord OAuth2 login, and hashed verification artifacts.
+        Aron is a Discord anime card collecting hub. Verification and account safety are handled privately.
       </footer>
     </div>
   );
