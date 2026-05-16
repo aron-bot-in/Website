@@ -1,8 +1,18 @@
-import { isPermissionError, readFirst, readValue, subscribeFirst, subscribeValue, updateValue } from "./firebase.js";
+import { isFirebaseConfigured, isPermissionError, readFirst, readValue, subscribeFirst, subscribeValue } from "./firebase.js";
 
 const CACHE_TTL = 60_000;
 const cache = new Map();
+const warned = new Set();
 const EMPTY_STATS = { players: 0, cards: 0, copies: 0, guilds: 0 };
+
+export const dataStatuses = {
+  loading: { source: "loading", label: "Loading live data" },
+  live: { source: "live", label: "Live Firebase" },
+  fallback: { source: "fallback", label: "Cached snapshot" },
+  limited: { source: "limited", label: "Limited public data" },
+  unavailable: { source: "unavailable", label: "Data unavailable" },
+  error: { source: "error", label: "Live data unavailable" }
+};
 
 async function cached(key, loader, ttl = CACHE_TTL) {
   const entry = cache.get(key);
@@ -10,6 +20,14 @@ async function cached(key, loader, ttl = CACHE_TTL) {
   const value = await loader();
   cache.set(key, { value, at: Date.now() });
   return value;
+}
+
+function warnOnce(key, message, error) {
+  if (warned.has(key)) return;
+  warned.add(key);
+  if (isPermissionError(error)) return;
+  const detail = error?.code || error?.message ? ` ${error.code || error.message}` : "";
+  console.warn(`${message}${detail}`);
 }
 
 export function normalizeCollection(value) {
@@ -23,11 +41,24 @@ export function normalizeCollection(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function buildWishlistCounts(users, cards = null) {
+function firstCount(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return 0;
+}
+
+function hasEntries(value) {
+  return Object.keys(normalizeCollection(value)).length > 0;
+}
+
+function buildWishlistCounts(publicUsers, cards = null) {
   const validCardIds = cards ? new Set(Object.keys(normalizeCollection(cards))) : null;
   const counts = {};
 
-  for (const user of Object.values(normalizeCollection(users))) {
+  for (const user of Object.values(normalizeCollection(publicUsers))) {
     const uniqueWishlist = new Set(Array.isArray(user?.wishlist) ? user.wishlist.map(String) : []);
     for (const cardId of uniqueWishlist) {
       if (!cardId) continue;
@@ -99,16 +130,28 @@ async function readSnapshotValue(path, fallback = null) {
   }
 }
 
-async function readLiveOrSnapshot(path, fallback = null) {
+async function readSnapshotCollection(paths, limit = 100) {
+  const candidates = Array.isArray(paths) ? paths : [paths];
+  for (const path of candidates.filter(Boolean)) {
+    const value = normalizeCollection(await readSnapshotValue(path, {}));
+    if (hasEntries(value)) return Object.fromEntries(Object.entries(value).slice(0, limit));
+  }
+  return {};
+}
+
+async function readLiveOrSnapshot(path, fallback = null, snapshotPaths = [path]) {
   try {
     const value = await readValue(path, undefined);
     if (value !== undefined && value !== null) return value;
   } catch (error) {
-    if (!isPermissionError(error)) {
-      console.warn(`[Website data] Firebase read failed for ${path}:`, error);
-    }
+    warnOnce(`read:${path}`, `[Website data] Firebase read failed for ${path}.`, error);
   }
-  return readSnapshotValue(path, fallback);
+
+  for (const snapshotPath of snapshotPaths.filter(Boolean)) {
+    const value = await readSnapshotValue(snapshotPath, undefined);
+    if (value !== undefined && value !== null) return value;
+  }
+  return fallback;
 }
 
 export function clearDataCache(prefix = "") {
@@ -122,67 +165,78 @@ export function clearDataCache(prefix = "") {
   }
 }
 
-export async function getWishlistLeaderboardCounts() {
-  const [users, cards] = await Promise.all([
-    readCollection("users", 500),
-    readCollection("cards", 500)
-  ]);
-  const counts = buildWishlistCounts(users, cards);
-  if (Object.keys(counts).length > 0) return counts;
-
-  const publicCounts = buildWishlistCounts(await readPublicUsers(500), cards);
-  if (Object.keys(publicCounts).length > 0) return publicCounts;
-
-  const snapshotCounts = normalizeCollection(await readSnapshotValue("wishlistLeaderboard", {}));
-  return snapshotCounts;
-}
-
-async function readCollection(path, limit = 100) {
+async function readCollection(path, limit = 100, snapshotPaths = [path]) {
   try {
     const value = await readFirst(path, limit);
     const collection = normalizeCollection(value);
-    if (Object.keys(collection).length > 0) return collection;
+    if (hasEntries(collection)) return collection;
   } catch (error) {
-    if (!isPermissionError(error)) {
-      console.warn(`[Website data] Firebase collection read failed for ${path}:`, error);
-    }
+    warnOnce(`collection:${path}`, `[Website data] Firebase collection read failed for ${path}.`, error);
   }
 
-  const snapshotValue = await readSnapshotValue(path, {});
-  const collection = normalizeCollection(snapshotValue);
-  return Object.fromEntries(Object.entries(collection).slice(0, limit));
+  return readSnapshotCollection(snapshotPaths, limit);
 }
 
 async function readPublicUsers(limit = 500) {
   const publicUsers = await readCollection("publicUsers", limit);
-  if (Object.keys(publicUsers).length > 0) return publicUsers;
-  return sanitizePublicUsers(await readCollection("users", limit));
+  return sanitizePublicUsers(publicUsers);
 }
 
 async function readPublicUser(discordId) {
   const publicUser = await readLiveOrSnapshot(`publicUsers/${discordId}`, undefined);
-  if (publicUser) return sanitizePublicUser(publicUser, discordId);
-  const user = await readLiveOrSnapshot(`users/${discordId}`, null);
-  return user ? sanitizePublicUser(user, discordId) : null;
+  return publicUser ? sanitizePublicUser(publicUser, discordId) : null;
+}
+
+function statsFromMetadata(metadata = {}) {
+  const source = metadata?.stats && typeof metadata.stats === "object" ? metadata.stats : metadata;
+  return {
+    players: firstCount(source.players, source.playerCount, source.publicUsers, source.publicUserCount, source.users, source.userCount),
+    cards: firstCount(source.cards, source.cardTemplates, source.cardCount, source.totalCards),
+    copies: firstCount(source.copies, source.copyCount, source.cardCopies, source.totalCopies, source.claimedCopies),
+    guilds: firstCount(source.guilds, source.guildCount, source.servers, source.serverCount)
+  };
+}
+
+async function readWishlistLeaderboardCountsWithSource() {
+  const liveCounts = normalizeCollection(await readCollection("meta/wishlistLeaderboard", 500, ["meta/wishlistLeaderboard"]));
+  if (hasEntries(liveCounts)) return { value: liveCounts, status: dataStatuses.live };
+
+  const snapshotCounts = normalizeCollection(await readSnapshotValue("wishlistLeaderboard", {}));
+  if (hasEntries(snapshotCounts)) return { value: snapshotCounts, status: dataStatuses.fallback };
+
+  const [publicUsers, cards] = await Promise.all([
+    readPublicUsers(500),
+    readCollection("cards", 500)
+  ]);
+  const publicCounts = buildWishlistCounts(publicUsers, cards);
+  if (hasEntries(publicCounts)) {
+    return { value: publicCounts, status: isFirebaseConfigured ? dataStatuses.limited : dataStatuses.fallback };
+  }
+
+  return { value: {}, status: isFirebaseConfigured ? dataStatuses.unavailable : dataStatuses.fallback };
+}
+
+export async function getWishlistLeaderboardCounts() {
+  const result = await readWishlistLeaderboardCountsWithSource();
+  return result.value;
 }
 
 export async function getSiteStats() {
   return cached("siteStats", async () => {
-    const snapshotStats = await readSnapshotValue("stats", null);
-    if (snapshotStats && Object.values(snapshotStats).some((value) => Number(value) > 0)) {
-      return { ...EMPTY_STATS, ...snapshotStats };
-    }
-
-    const [users, cards, guilds] = await Promise.all([
+    const [metadata, users, cards, guilds, snapshotStats] = await Promise.all([
+      readLiveOrSnapshot("metadata", {}),
       readPublicUsers(500),
       readCollection("cards", 500),
-      readCollection("guilds", 500)
+      readCollection("guilds", 500),
+      readSnapshotValue("stats", {})
     ]);
+    const metadataStats = statsFromMetadata(metadata);
+
     return {
-      players: Object.keys(normalizeCollection(users)).length,
-      cards: Object.keys(normalizeCollection(cards)).length,
-      copies: Number(snapshotStats?.copies || 0),
-      guilds: Object.keys(normalizeCollection(guilds)).length
+      players: firstCount(metadataStats.players, Object.keys(normalizeCollection(users)).length, snapshotStats?.players),
+      cards: firstCount(metadataStats.cards, Object.keys(normalizeCollection(cards)).length, snapshotStats?.cards),
+      copies: firstCount(metadataStats.copies, snapshotStats?.copies),
+      guilds: firstCount(metadataStats.guilds, Object.keys(normalizeCollection(guilds)).length, snapshotStats?.guilds)
     };
   });
 }
@@ -233,22 +287,25 @@ function pickUnique(entries, limit, seen = new Set()) {
   return picked;
 }
 
+function buildShowcase(cards, wishlistLeaderboard, limit) {
+  const entries = decorateCards(cards, wishlistLeaderboard);
+  const topWishlisted = pickUnique([...entries].sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))), limit, new Set());
+  const rareFinds = pickUnique([...entries].sort((left, right) => {
+    const styleRank = { gold: 3, violet: 2, azure: 1 };
+    return (styleRank[right.card?.style] || 0) - (styleRank[left.card?.style] || 0) || right.count - left.count;
+  }), limit, new Set());
+  const recentlyAdded = pickUnique([...entries].sort((left, right) => right.createdAt - left.createdAt), limit, new Set());
+  const featured = pickUnique([...topWishlisted, ...rareFinds, ...recentlyAdded, ...entries], limit, new Set());
+  return { featured, topWishlisted, rareFinds, recentlyAdded };
+}
+
 export async function getCardShowcase(limit = 6) {
   return cached(`cardShowcase:${limit}`, async () => {
     const [cards, wishlistLeaderboard] = await Promise.all([
       readCollection("cards", 500),
       getWishlistLeaderboardCounts()
     ]);
-    const entries = decorateCards(cards, wishlistLeaderboard);
-    const seen = new Set();
-    const topWishlisted = pickUnique([...entries].sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))), limit, seen);
-    const rareFinds = pickUnique([...entries].sort((left, right) => {
-      const styleRank = { gold: 3, violet: 2, azure: 1 };
-      return (styleRank[right.card?.style] || 0) - (styleRank[left.card?.style] || 0) || right.count - left.count;
-    }), limit, new Set());
-    const recentlyAdded = pickUnique([...entries].sort((left, right) => right.createdAt - left.createdAt), limit, new Set());
-    const featured = pickUnique([...topWishlisted, ...rareFinds, ...recentlyAdded, ...entries], limit, new Set());
-    return { featured, topWishlisted, rareFinds, recentlyAdded };
+    return buildShowcase(cards, wishlistLeaderboard, limit);
   }, 45_000);
 }
 
@@ -288,18 +345,35 @@ export async function getWishlistData(discordId) {
   };
 }
 
-function subscribeCollection(path, limit, onNext) {
-  getSnapshot()
-    .then((snapshot) => {
-      const collection = normalizeCollection(getSnapshotPath(snapshot, path));
-      if (Object.keys(collection).length) onNext(Object.fromEntries(Object.entries(collection).slice(0, limit)));
+function subscribeCollection(path, limit, onNext, snapshotPaths = [path]) {
+  let hasLive = false;
+  let hasFallback = false;
+  let blocked = false;
+
+  readSnapshotCollection(snapshotPaths, limit)
+    .then((collection) => {
+      if (!hasLive && hasEntries(collection)) {
+        hasFallback = true;
+        onNext(collection, dataStatuses.fallback);
+      }
     })
     .catch(() => {});
 
+  if (!isFirebaseConfigured) {
+    if (!hasFallback) onNext({}, dataStatuses.fallback);
+    return () => {};
+  }
+
   return subscribeFirst(path, limit, (value) => {
+    if (blocked) return;
     const collection = normalizeCollection(value);
-    if (Object.keys(collection).length) onNext(collection);
-  }, (error) => console.warn(`[Website data] Firebase collection listener failed for ${path}:`, error));
+    hasLive = true;
+    onNext(collection, dataStatuses.live);
+  }, (error) => {
+    blocked = true;
+    if (!hasFallback) onNext({}, isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
+    warnOnce(`listener:${path}`, `[Website data] Firebase collection listener failed for ${path}.`, error);
+  });
 }
 
 export function subscribeCardsPage(limit = 60, onNext) {
@@ -311,82 +385,82 @@ export function subscribeGuildsPage(limit = 50, onNext) {
 }
 
 export function subscribeWishlistLeaderboardCounts(onNext) {
-  getWishlistLeaderboardCounts().then(onNext).catch(() => {});
+  let hasLive = false;
+  let blocked = false;
 
-  let users = {};
-  let publicUsers = {};
-  let cards = {};
+  readWishlistLeaderboardCountsWithSource()
+    .then(({ value, status }) => {
+      if (!hasLive) onNext(value, status);
+    })
+    .catch(() => {});
 
-  const emit = () => {
-    const sourceUsers = Object.keys(normalizeCollection(users)).length > 0
-      ? sanitizePublicUsers(users)
-      : publicUsers;
-    onNext(buildWishlistCounts(sourceUsers, cards));
-  };
+  if (!isFirebaseConfigured) return () => {};
 
-  const unsubscribers = [
-    subscribeFirst("publicUsers", 500, (value) => {
-      const collection = normalizeCollection(value);
-      if (Object.keys(collection).length > 0) {
-        publicUsers = collection;
-        emit();
-      }
-    }, (error) => console.warn("[Website data] Public wishlist listener failed:", error)),
-    subscribeFirst("users", 500, (value) => {
-      users = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Wishlist users listener failed:", error)),
-    subscribeFirst("cards", 500, (value) => {
-      cards = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Wishlist cards listener failed:", error))
-  ];
-
-  return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
+  return subscribeFirst("meta/wishlistLeaderboard", 500, (value) => {
+    if (blocked) return;
+    hasLive = true;
+    onNext(normalizeCollection(value), dataStatuses.live);
+  }, (error) => {
+    blocked = true;
+    onNext({}, isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
+    warnOnce("listener:meta/wishlistLeaderboard", "[Website data] Wishlist leaderboard listener failed.", error);
+  });
 }
 
 export function subscribeSiteStats(onNext) {
+  let metadataStats = {};
   let users = {};
   let cards = {};
   let guilds = {};
-  let codes = {};
-  let usingPublicUsers = false;
+  let snapshotStats = {};
+  let liveSeen = false;
 
-  const emit = () => onNext({
-    players: Object.keys(normalizeCollection(users)).length,
-    cards: Object.keys(normalizeCollection(cards)).length,
-    copies: Object.keys(normalizeCollection(codes)).length,
-    guilds: Object.keys(normalizeCollection(guilds)).length
-  });
+  const emit = (status = liveSeen ? dataStatuses.live : dataStatuses.fallback) => onNext({
+    players: firstCount(metadataStats.players, Object.keys(normalizeCollection(users)).length, snapshotStats.players),
+    cards: firstCount(metadataStats.cards, Object.keys(normalizeCollection(cards)).length, snapshotStats.cards),
+    copies: firstCount(metadataStats.copies, snapshotStats.copies),
+    guilds: firstCount(metadataStats.guilds, Object.keys(normalizeCollection(guilds)).length, snapshotStats.guilds)
+  }, status);
 
-  getSiteStats().then(onNext).catch(() => {});
+  readSnapshotValue("stats", {})
+    .then((value) => {
+      snapshotStats = { ...EMPTY_STATS, ...value };
+      emit(dataStatuses.fallback);
+    })
+    .catch(() => {});
+
+  if (!isFirebaseConfigured) return () => {};
 
   const unsubscribers = [
+    subscribeValue("metadata", (value) => {
+      liveSeen = true;
+      metadataStats = statsFromMetadata(value || {});
+      emit(dataStatuses.live);
+    }, (error) => {
+      emit(isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
+      warnOnce("listener:metadata", "[Website data] Metadata listener failed.", error);
+    }, {}),
     subscribeFirst("publicUsers", 500, (value) => {
-      const collection = normalizeCollection(value);
-      if (Object.keys(collection).length > 0) {
-        usingPublicUsers = true;
-        users = collection;
-        emit();
-      }
-    }, (error) => console.warn("[Website data] Public users listener failed:", error)),
-    subscribeFirst("users", 500, (value) => {
-      if (usingPublicUsers) return;
+      liveSeen = true;
       users = sanitizePublicUsers(value);
-      emit();
-    }, (error) => console.warn("[Website data] Users listener failed:", error)),
+      emit(dataStatuses.live);
+    }, (error) => {
+      warnOnce("listener:publicUsers:stats", "[Website data] Public users listener failed.", error);
+    }),
     subscribeFirst("cards", 500, (value) => {
+      liveSeen = true;
       cards = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Cards listener failed:", error)),
+      emit(dataStatuses.live);
+    }, (error) => {
+      warnOnce("listener:cards:stats", "[Website data] Cards listener failed.", error);
+    }),
     subscribeFirst("guilds", 500, (value) => {
+      liveSeen = true;
       guilds = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Guilds listener failed:", error)),
-    subscribeFirst("codes", 1000, (value) => {
-      codes = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Codes listener failed:", error))
+      emit(dataStatuses.live);
+    }, (error) => {
+      warnOnce("listener:guilds:stats", "[Website data] Guilds listener failed.", error);
+    })
   ];
 
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
@@ -394,40 +468,42 @@ export function subscribeSiteStats(onNext) {
 
 export function subscribeDashboard(discordId, onNext) {
   if (!discordId) return () => {};
-  getDashboard(discordId).then(onNext).catch(() => {});
+  getDashboard(discordId).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
 
   let user = null;
-  let publicUser = null;
   let cards = {};
   let guilds = {};
   let wishlistLeaderboard = {};
+  let blockedUser = false;
 
-  const emit = () => {
-    const resolvedUser = publicUser || (user ? sanitizePublicUser(user, discordId) : null);
-    const guild = resolvedUser?.guildId ? guilds?.[resolvedUser.guildId] : null;
-    onNext({ user: resolvedUser, cards: normalizeCollection(cards), guild, wishlistLeaderboard });
+  const emit = (status = dataStatuses.live) => {
+    const guild = user?.guildId ? guilds?.[user.guildId] : null;
+    onNext({ user, cards: normalizeCollection(cards), guild, wishlistLeaderboard }, status);
   };
+
+  if (!isFirebaseConfigured) return () => {};
 
   const unsubscribers = [
     subscribeValue(`publicUsers/${discordId}`, (value) => {
-      publicUser = value ? sanitizePublicUser(value, discordId) : null;
-      emit();
-    }, (error) => console.warn("[Website data] Public user listener failed:", error), null),
-    subscribeValue(`users/${discordId}`, (value) => {
-      user = value || null;
-      emit();
-    }, (error) => console.warn("[Website data] User listener failed:", error), null),
+      if (blockedUser) return;
+      user = value ? sanitizePublicUser(value, discordId) : null;
+      emit(dataStatuses.live);
+    }, (error) => {
+      blockedUser = true;
+      emit(isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
+      warnOnce(`listener:publicUsers:${discordId}`, "[Website data] Public user listener failed.", error);
+    }, null),
     subscribeFirst("cards", 200, (value) => {
       cards = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Cards listener failed:", error)),
+      emit(dataStatuses.live);
+    }, (error) => warnOnce("listener:cards:dashboard", "[Website data] Cards listener failed.", error)),
     subscribeFirst("guilds", 100, (value) => {
       guilds = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Guilds listener failed:", error)),
-    subscribeWishlistLeaderboardCounts((value) => {
+      emit(dataStatuses.live);
+    }, (error) => warnOnce("listener:guilds:dashboard", "[Website data] Guilds listener failed.", error)),
+    subscribeWishlistLeaderboardCounts((value, status) => {
       wishlistLeaderboard = normalizeCollection(value);
-      emit();
+      emit(status?.source === "live" ? dataStatuses.live : status);
     })
   ];
 
@@ -435,27 +511,29 @@ export function subscribeDashboard(discordId, onNext) {
 }
 
 export function subscribeTopWishlistedCards(limit = 3, onNext) {
-  getTopWishlistedCards(limit).then(onNext).catch(() => {});
+  getTopWishlistedCards(limit).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
+
+  if (!isFirebaseConfigured) return () => {};
 
   let cards = {};
   let wishlistLeaderboard = {};
-  const emit = () => {
+  const emit = (status = dataStatuses.live) => {
     const entries = Object.entries(normalizeCollection(wishlistLeaderboard))
       .map(([cardId, count]) => ({ cardId: String(cardId), count: Number(count || 0), card: cards?.[cardId] }))
       .filter((entry) => entry.card && entry.count > 0)
       .sort((left, right) => right.count - left.count || String(left.card?.name || "").localeCompare(String(right.card?.name || "")))
       .slice(0, limit);
-    onNext(entries);
+    onNext(entries, status);
   };
 
   const unsubscribers = [
     subscribeFirst("cards", 500, (value) => {
       cards = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Cards listener failed:", error)),
-    subscribeWishlistLeaderboardCounts((value) => {
+      emit(dataStatuses.live);
+    }, (error) => warnOnce("listener:cards:topWishlist", "[Website data] Cards listener failed.", error)),
+    subscribeWishlistLeaderboardCounts((value, status) => {
       wishlistLeaderboard = normalizeCollection(value);
-      emit();
+      emit(status);
     })
   ];
 
@@ -463,30 +541,24 @@ export function subscribeTopWishlistedCards(limit = 3, onNext) {
 }
 
 export function subscribeCardShowcase(limit = 6, onNext) {
-  getCardShowcase(limit).then(onNext).catch(() => {});
+  getCardShowcase(limit).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
+
+  if (!isFirebaseConfigured) return () => {};
 
   let cards = {};
   let wishlistLeaderboard = {};
-  const emit = () => {
-    const entries = decorateCards(cards, wishlistLeaderboard);
-    const topWishlisted = pickUnique([...entries].sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))), limit, new Set());
-    const rareFinds = pickUnique([...entries].sort((left, right) => {
-      const styleRank = { gold: 3, violet: 2, azure: 1 };
-      return (styleRank[right.card?.style] || 0) - (styleRank[left.card?.style] || 0) || right.count - left.count;
-    }), limit, new Set());
-    const recentlyAdded = pickUnique([...entries].sort((left, right) => right.createdAt - left.createdAt), limit, new Set());
-    const featured = pickUnique([...topWishlisted, ...rareFinds, ...recentlyAdded, ...entries], limit, new Set());
-    onNext({ featured, topWishlisted, rareFinds, recentlyAdded });
+  const emit = (status = dataStatuses.live) => {
+    onNext(buildShowcase(cards, wishlistLeaderboard, limit), status);
   };
 
   const unsubscribers = [
     subscribeFirst("cards", 500, (value) => {
       cards = normalizeCollection(value);
-      emit();
-    }, (error) => console.warn("[Website data] Cards listener failed:", error)),
-    subscribeWishlistLeaderboardCounts((value) => {
+      emit(dataStatuses.live);
+    }, (error) => warnOnce("listener:cards:showcase", "[Website data] Cards listener failed.", error)),
+    subscribeWishlistLeaderboardCounts((value, status) => {
       wishlistLeaderboard = normalizeCollection(value);
-      emit();
+      emit(status?.source === "live" ? dataStatuses.live : status);
     })
   ];
 
@@ -495,27 +567,14 @@ export function subscribeCardShowcase(limit = 6, onNext) {
 
 export function subscribeWishlistData(discordId, onNext) {
   if (!discordId) return () => {};
-  getWishlistData(discordId).then(onNext).catch(() => {});
+  getWishlistData(discordId).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
 
-  return subscribeDashboard(discordId, (dashboard) => {
+  return subscribeDashboard(discordId, (dashboard, status) => {
     const wishlistIds = Array.isArray(dashboard?.user?.wishlist) ? dashboard.user.wishlist : [];
     onNext({
       ...dashboard,
       wishlistCards: wishlistIds.map((cardId) => dashboard?.cards?.[cardId]).filter(Boolean),
       allCards: normalizeCollection(dashboard?.cards)
-    });
+    }, status);
   });
-}
-
-export async function syncWebUser(identity) {
-  if (!identity.discordId) return null;
-  const payload = {
-    discordId: identity.discordId,
-    username: identity.username,
-    avatar: identity.avatar,
-    lastLoginAt: Date.now(),
-    provider: "discord-oauth2"
-  };
-  await updateValue(`webUsers/${identity.discordId}`, payload);
-  return payload;
 }
