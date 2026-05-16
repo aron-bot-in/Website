@@ -54,6 +54,16 @@ function hasEntries(value) {
   return Object.keys(normalizeCollection(value)).length > 0;
 }
 
+function entryCount(value) {
+  const collection = normalizeCollection(value);
+  return hasEntries(collection) ? Object.keys(collection).length : null;
+}
+
+function hasUsefulStats(value) {
+  const stats = statsFromMetadata(value);
+  return Object.values(stats).some((count) => Number(count || 0) > 0);
+}
+
 function buildWishlistCounts(publicUsers, cards = null) {
   const validCardIds = cards ? new Set(Object.keys(normalizeCollection(cards))) : null;
   const counts = {};
@@ -178,14 +188,13 @@ async function readCollection(path, limit = 100, snapshotPaths = [path]) {
 }
 
 async function readPublicUsers(limit = 500) {
-  const publicUsers = await readCollection("publicUsers", limit, ["publicUsers", "users"]);
+  const publicUsers = await readCollection("publicUsers", limit, ["publicUsers"]);
   return sanitizePublicUsers(publicUsers);
 }
 
 async function readPublicUser(discordId) {
   const publicUser = await readLiveOrSnapshot(`publicUsers/${discordId}`, undefined, [
-    `publicUsers/${discordId}`,
-    `users/${discordId}`
+    `publicUsers/${discordId}`
   ]);
   return publicUser ? sanitizePublicUser(publicUser, discordId) : null;
 }
@@ -200,17 +209,29 @@ function statsFromMetadata(metadata = {}) {
   };
 }
 
+function extractWishlistCounts(value) {
+  const collection = normalizeCollection(value);
+  const nestedCounts = normalizeCollection(collection.counts);
+  if (hasEntries(nestedCounts)) return nestedCounts;
+
+  return Object.fromEntries(
+    Object.entries(collection)
+      .filter(([key, count]) => !["counts", "updatedAt", "version"].includes(key) && Number.isFinite(Number(count)))
+      .map(([key, count]) => [key, Number(count || 0)])
+  );
+}
+
 async function readWishlistLeaderboardCountsWithSource() {
   if (isFirebaseConfigured) {
     try {
-      const liveCounts = normalizeCollection(await readFirst("meta/wishlistLeaderboard", 500));
+      const liveCounts = extractWishlistCounts(await readValue("meta/wishlistLeaderboard", {}));
       if (hasEntries(liveCounts)) return { value: liveCounts, status: dataStatuses.live };
     } catch (error) {
       warnOnce("read:meta/wishlistLeaderboard", "[Website data] Firebase wishlist leaderboard read failed.", error);
     }
   }
 
-  const snapshotCounts = normalizeCollection(await readSnapshotValue("wishlistLeaderboard", {}));
+  const snapshotCounts = extractWishlistCounts(await readSnapshotValue("wishlistLeaderboard", {}));
   if (hasEntries(snapshotCounts)) return { value: snapshotCounts, status: dataStatuses.fallback };
 
   const [publicUsers, cards] = await Promise.all([
@@ -242,10 +263,10 @@ export async function getSiteStats() {
     const metadataStats = statsFromMetadata(metadata);
 
     return {
-      players: firstCount(metadataStats.players, snapshotStats?.players, Object.keys(normalizeCollection(users)).length),
-      cards: firstCount(metadataStats.cards, Object.keys(normalizeCollection(cards)).length, snapshotStats?.cards),
+      players: firstCount(metadataStats.players, entryCount(users), snapshotStats?.players),
+      cards: firstCount(metadataStats.cards, entryCount(cards), snapshotStats?.cards),
       copies: firstCount(metadataStats.copies, snapshotStats?.copies),
-      guilds: firstCount(metadataStats.guilds, Object.keys(normalizeCollection(guilds)).length, snapshotStats?.guilds)
+      guilds: firstCount(metadataStats.guilds, entryCount(guilds), snapshotStats?.guilds)
     };
   });
 }
@@ -356,31 +377,41 @@ export async function getWishlistData(discordId) {
 
 function subscribeCollection(path, limit, onNext, snapshotPaths = [path]) {
   let hasLive = false;
-  let hasFallback = false;
+  let fallbackCollection = {};
   let blocked = false;
 
   readSnapshotCollection(snapshotPaths, limit)
     .then((collection) => {
+      fallbackCollection = collection;
       if (!hasLive && hasEntries(collection)) {
-        hasFallback = true;
         onNext(collection, dataStatuses.fallback);
       }
     })
     .catch(() => {});
 
   if (!isFirebaseConfigured) {
-    if (!hasFallback) onNext({}, dataStatuses.fallback);
+    if (!hasEntries(fallbackCollection)) onNext({}, dataStatuses.fallback);
     return () => {};
   }
 
   return subscribeFirst(path, limit, (value) => {
     if (blocked) return;
     const collection = normalizeCollection(value);
+    if (hasEntries(collection)) {
+      hasLive = true;
+      onNext(collection, dataStatuses.live);
+      return;
+    }
+    if (hasEntries(fallbackCollection)) {
+      onNext(fallbackCollection, dataStatuses.fallback);
+      return;
+    }
     hasLive = true;
-    onNext(collection, dataStatuses.live);
+    onNext({}, dataStatuses.unavailable);
   }, (error) => {
     blocked = true;
-    if (!hasFallback) onNext({}, isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
+    if (hasEntries(fallbackCollection)) onNext(fallbackCollection, dataStatuses.fallback);
+    else onNext({}, isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
     warnOnce(`listener:${path}`, `[Website data] Firebase collection listener failed for ${path}.`, error);
   });
 }
@@ -396,24 +427,37 @@ export function subscribeGuildsPage(limit = 50, onNext) {
 export function subscribeWishlistLeaderboardCounts(onNext) {
   let hasLive = false;
   let blocked = false;
+  let fallbackCounts = {};
 
   readWishlistLeaderboardCountsWithSource()
     .then(({ value, status }) => {
+      if (status?.source !== "live") fallbackCounts = normalizeCollection(value);
       if (!hasLive) onNext(value, status);
     })
     .catch(() => {});
 
   if (!isFirebaseConfigured) return () => {};
 
-  return subscribeFirst("meta/wishlistLeaderboard", 500, (value) => {
+  return subscribeValue("meta/wishlistLeaderboard", (value) => {
     if (blocked) return;
+    const counts = extractWishlistCounts(value);
+    if (hasEntries(counts)) {
+      hasLive = true;
+      onNext(counts, dataStatuses.live);
+      return;
+    }
+    if (hasEntries(fallbackCounts)) {
+      onNext(fallbackCounts, dataStatuses.fallback);
+      return;
+    }
     hasLive = true;
-    onNext(normalizeCollection(value), dataStatuses.live);
+    onNext({}, dataStatuses.unavailable);
   }, (error) => {
     blocked = true;
-    onNext({}, isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
+    if (hasEntries(fallbackCounts)) onNext(fallbackCounts, dataStatuses.fallback);
+    else onNext({}, isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
     warnOnce("listener:meta/wishlistLeaderboard", "[Website data] Wishlist leaderboard listener failed.", error);
-  });
+  }, {});
 }
 
 export function subscribeSiteStats(onNext) {
@@ -422,13 +466,13 @@ export function subscribeSiteStats(onNext) {
   let cards = {};
   let guilds = {};
   let snapshotStats = {};
-  let liveSeen = false;
+  let liveSources = 0;
 
-  const emit = (status = liveSeen ? dataStatuses.live : dataStatuses.fallback) => onNext({
-    players: firstCount(metadataStats.players, snapshotStats.players, Object.keys(normalizeCollection(users)).length),
-    cards: firstCount(metadataStats.cards, Object.keys(normalizeCollection(cards)).length, snapshotStats.cards),
+  const emit = (status = liveSources > 0 ? dataStatuses.live : dataStatuses.fallback) => onNext({
+    players: firstCount(metadataStats.players, entryCount(users), snapshotStats.players),
+    cards: firstCount(metadataStats.cards, entryCount(cards), snapshotStats.cards),
     copies: firstCount(metadataStats.copies, snapshotStats.copies),
-    guilds: firstCount(metadataStats.guilds, Object.keys(normalizeCollection(guilds)).length, snapshotStats.guilds)
+    guilds: firstCount(metadataStats.guilds, entryCount(guilds), snapshotStats.guilds)
   }, status);
 
   readSnapshotValue("stats", {})
@@ -442,31 +486,44 @@ export function subscribeSiteStats(onNext) {
 
   const unsubscribers = [
     subscribeValue("metadata", (value) => {
-      liveSeen = true;
-      metadataStats = statsFromMetadata(value || {});
-      emit(dataStatuses.live);
+      if (hasUsefulStats(value || {})) {
+        liveSources += 1;
+        metadataStats = statsFromMetadata(value || {});
+        emit(dataStatuses.live);
+      } else {
+        emit(hasEntries(snapshotStats) ? dataStatuses.fallback : dataStatuses.unavailable);
+      }
     }, (error) => {
       emit(isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
       warnOnce("listener:metadata", "[Website data] Metadata listener failed.", error);
     }, {}),
     subscribeFirst("publicUsers", 500, (value) => {
-      liveSeen = true;
-      users = sanitizePublicUsers(value);
-      emit(dataStatuses.live);
+      const nextUsers = sanitizePublicUsers(value);
+      if (hasEntries(nextUsers)) {
+        liveSources += 1;
+        users = nextUsers;
+        emit(dataStatuses.live);
+      }
     }, (error) => {
       warnOnce("listener:publicUsers:stats", "[Website data] Public users listener failed.", error);
     }),
     subscribeFirst("cards", 500, (value) => {
-      liveSeen = true;
-      cards = normalizeCollection(value);
-      emit(dataStatuses.live);
+      const nextCards = normalizeCollection(value);
+      if (hasEntries(nextCards)) {
+        liveSources += 1;
+        cards = nextCards;
+        emit(dataStatuses.live);
+      }
     }, (error) => {
       warnOnce("listener:cards:stats", "[Website data] Cards listener failed.", error);
     }),
     subscribeFirst("guilds", 500, (value) => {
-      liveSeen = true;
-      guilds = normalizeCollection(value);
-      emit(dataStatuses.live);
+      const nextGuilds = normalizeCollection(value);
+      if (hasEntries(nextGuilds)) {
+        liveSources += 1;
+        guilds = nextGuilds;
+        emit(dataStatuses.live);
+      }
     }, (error) => {
       warnOnce("listener:guilds:stats", "[Website data] Guilds listener failed.", error);
     })
@@ -477,13 +534,21 @@ export function subscribeSiteStats(onNext) {
 
 export function subscribeDashboard(discordId, onNext) {
   if (!discordId) return () => {};
-  getDashboard(discordId).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
 
   let user = null;
   let cards = {};
   let guilds = {};
   let wishlistLeaderboard = {};
   let blockedUser = false;
+  let hasLiveUser = false;
+
+  getDashboard(discordId).then((value) => {
+    user = value?.user || null;
+    cards = normalizeCollection(value?.cards);
+    guilds = value?.guild ? { [value.guild.id]: value.guild } : guilds;
+    wishlistLeaderboard = normalizeCollection(value?.wishlistLeaderboard);
+    onNext(value, dataStatuses.fallback);
+  }).catch(() => {});
 
   const emit = (status = dataStatuses.live) => {
     const guild = user?.guildId ? guilds?.[user.guildId] : null;
@@ -495,20 +560,31 @@ export function subscribeDashboard(discordId, onNext) {
   const unsubscribers = [
     subscribeValue(`publicUsers/${discordId}`, (value) => {
       if (blockedUser) return;
-      user = value ? sanitizePublicUser(value, discordId) : null;
-      emit(dataStatuses.live);
+      if (value) {
+        hasLiveUser = true;
+        user = sanitizePublicUser(value, discordId);
+        emit(dataStatuses.live);
+        return;
+      }
+      if (!user) emit(dataStatuses.unavailable);
     }, (error) => {
       blockedUser = true;
       emit(isPermissionError(error) ? dataStatuses.unavailable : dataStatuses.error);
       warnOnce(`listener:publicUsers:${discordId}`, "[Website data] Public user listener failed.", error);
     }, null),
     subscribeFirst("cards", 200, (value) => {
-      cards = normalizeCollection(value);
-      emit(dataStatuses.live);
+      const nextCards = normalizeCollection(value);
+      if (hasEntries(nextCards)) {
+        cards = nextCards;
+        emit(hasLiveUser ? dataStatuses.live : dataStatuses.fallback);
+      }
     }, (error) => warnOnce("listener:cards:dashboard", "[Website data] Cards listener failed.", error)),
     subscribeFirst("guilds", 100, (value) => {
-      guilds = normalizeCollection(value);
-      emit(dataStatuses.live);
+      const nextGuilds = normalizeCollection(value);
+      if (hasEntries(nextGuilds)) {
+        guilds = nextGuilds;
+        emit(hasLiveUser ? dataStatuses.live : dataStatuses.fallback);
+      }
     }, (error) => warnOnce("listener:guilds:dashboard", "[Website data] Guilds listener failed.", error)),
     subscribeWishlistLeaderboardCounts((value, status) => {
       wishlistLeaderboard = normalizeCollection(value);
@@ -520,7 +596,13 @@ export function subscribeDashboard(discordId, onNext) {
 }
 
 export function subscribeTopWishlistedCards(limit = 3, onNext) {
-  getTopWishlistedCards(limit).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
+  let hasLiveCards = false;
+  let fallbackEntries = [];
+
+  getTopWishlistedCards(limit).then((value) => {
+    fallbackEntries = Array.isArray(value) ? value : [];
+    if (!hasLiveCards) onNext(fallbackEntries, dataStatuses.fallback);
+  }).catch(() => {});
 
   if (!isFirebaseConfigured) return () => {};
 
@@ -532,17 +614,25 @@ export function subscribeTopWishlistedCards(limit = 3, onNext) {
       .filter((entry) => entry.card && entry.count > 0)
       .sort((left, right) => right.count - left.count || String(left.card?.name || "").localeCompare(String(right.card?.name || "")))
       .slice(0, limit);
-    onNext(entries, status);
+    if (entries.length || hasEntries(wishlistLeaderboard) || !fallbackEntries.length) onNext(entries, status);
+    else onNext(fallbackEntries, dataStatuses.fallback);
   };
 
   const unsubscribers = [
     subscribeFirst("cards", 500, (value) => {
-      cards = normalizeCollection(value);
-      emit(dataStatuses.live);
+      const nextCards = normalizeCollection(value);
+      if (hasEntries(nextCards)) {
+        hasLiveCards = true;
+        cards = nextCards;
+        emit(dataStatuses.live);
+      } else if (fallbackEntries.length) {
+        onNext(fallbackEntries, dataStatuses.fallback);
+      }
     }, (error) => warnOnce("listener:cards:topWishlist", "[Website data] Cards listener failed.", error)),
     subscribeWishlistLeaderboardCounts((value, status) => {
       wishlistLeaderboard = normalizeCollection(value);
-      emit(status);
+      if (hasLiveCards) emit(status);
+      else if (fallbackEntries.length) onNext(fallbackEntries, dataStatuses.fallback);
     })
   ];
 
@@ -550,24 +640,39 @@ export function subscribeTopWishlistedCards(limit = 3, onNext) {
 }
 
 export function subscribeCardShowcase(limit = 6, onNext) {
-  getCardShowcase(limit).then((value) => onNext(value, dataStatuses.fallback)).catch(() => {});
+  let hasLiveCards = false;
+  let fallbackShowcase = null;
+
+  getCardShowcase(limit).then((value) => {
+    fallbackShowcase = value;
+    if (!hasLiveCards) onNext(value, dataStatuses.fallback);
+  }).catch(() => {});
 
   if (!isFirebaseConfigured) return () => {};
 
   let cards = {};
   let wishlistLeaderboard = {};
   const emit = (status = dataStatuses.live) => {
-    onNext(buildShowcase(cards, wishlistLeaderboard, limit), status);
+    const showcase = buildShowcase(cards, wishlistLeaderboard, limit);
+    if (showcase.featured.length || status?.source === "live" || !fallbackShowcase) onNext(showcase, status);
+    else onNext(fallbackShowcase, dataStatuses.fallback);
   };
 
   const unsubscribers = [
     subscribeFirst("cards", 500, (value) => {
-      cards = normalizeCollection(value);
-      emit(dataStatuses.live);
+      const nextCards = normalizeCollection(value);
+      if (hasEntries(nextCards)) {
+        hasLiveCards = true;
+        cards = nextCards;
+        emit(dataStatuses.live);
+      } else if (fallbackShowcase) {
+        onNext(fallbackShowcase, dataStatuses.fallback);
+      }
     }, (error) => warnOnce("listener:cards:showcase", "[Website data] Cards listener failed.", error)),
     subscribeWishlistLeaderboardCounts((value, status) => {
       wishlistLeaderboard = normalizeCollection(value);
-      emit(status?.source === "live" ? dataStatuses.live : status);
+      if (hasLiveCards) emit(status?.source === "live" ? dataStatuses.live : status);
+      else if (fallbackShowcase) onNext(fallbackShowcase, dataStatuses.fallback);
     })
   ];
 
