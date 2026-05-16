@@ -178,12 +178,15 @@ async function readCollection(path, limit = 100, snapshotPaths = [path]) {
 }
 
 async function readPublicUsers(limit = 500) {
-  const publicUsers = await readCollection("publicUsers", limit);
+  const publicUsers = await readCollection("publicUsers", limit, ["publicUsers", "users"]);
   return sanitizePublicUsers(publicUsers);
 }
 
 async function readPublicUser(discordId) {
-  const publicUser = await readLiveOrSnapshot(`publicUsers/${discordId}`, undefined);
+  const publicUser = await readLiveOrSnapshot(`publicUsers/${discordId}`, undefined, [
+    `publicUsers/${discordId}`,
+    `users/${discordId}`
+  ]);
   return publicUser ? sanitizePublicUser(publicUser, discordId) : null;
 }
 
