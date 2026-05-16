@@ -1,4 +1,13 @@
-import { isFirebaseConfigured, isPermissionError, readFirst, readValue, subscribeFirst, subscribeValue } from "./firebase.js";
+import {
+  isFirebaseConfigured,
+  isPermissionError,
+  readFirst,
+  readLastByChild,
+  readValue,
+  subscribeFirst,
+  subscribeLastByChild,
+  subscribeValue
+} from "./firebase.js";
 
 const CACHE_TTL = 60_000;
 const cache = new Map();
@@ -221,6 +230,31 @@ function extractWishlistCounts(value) {
   );
 }
 
+function explicitWishlistCount(card) {
+  if (card?.wishlistCount !== undefined && card?.wishlistCount !== null) return firstCount(card.wishlistCount);
+  if (Array.isArray(card?.wishlistedBy)) return card.wishlistedBy.length;
+  if (card?.wishlistedBy && typeof card.wishlistedBy === "object") return Object.keys(card.wishlistedBy).length;
+  return null;
+}
+
+function cardWishlistCount(card, leaderboardCount = 0) {
+  const explicitCount = explicitWishlistCount(card);
+  return explicitCount === null ? firstCount(leaderboardCount) : explicitCount;
+}
+
+function topWishlistedEntriesFromCards(cards, wishlistLeaderboard = {}, limit = 4) {
+  return Object.values(normalizeCollection(cards))
+    .filter((card) => card && card.active !== false)
+    .map((card) => ({
+      cardId: String(card.id || ""),
+      card,
+      count: cardWishlistCount(card, wishlistLeaderboard?.[card.id])
+    }))
+    .filter((entry) => entry.cardId && entry.count > 0)
+    .sort((left, right) => right.count - left.count || String(left.card?.name || "").localeCompare(String(right.card?.name || "")))
+    .slice(0, limit);
+}
+
 async function readWishlistLeaderboardCountsWithSource() {
   if (isFirebaseConfigured) {
     try {
@@ -273,21 +307,25 @@ export async function getSiteStats() {
 
 export async function getTopWishlistedCards(limit = 3) {
   return cached(`topWishlistedCards:${limit}`, async () => {
+    const wishlistCountCards = await readCollectionByWishlistCount(limit);
+    if (wishlistCountCards.length) return wishlistCountCards;
+
     const [cards, wishlistLeaderboard] = await Promise.all([
       readCollection("cards", 500),
       getWishlistLeaderboardCounts()
     ]);
-
-    return Object.entries(normalizeCollection(wishlistLeaderboard))
-      .map(([cardId, count]) => ({
-        cardId: String(cardId),
-        count: Number(count || 0),
-        card: cards?.[cardId]
-      }))
-      .filter((entry) => entry.card && entry.count > 0)
-      .sort((left, right) => right.count - left.count || String(left.card?.name || "").localeCompare(String(right.card?.name || "")))
-      .slice(0, limit);
+    return topWishlistedEntriesFromCards(cards, wishlistLeaderboard, limit);
   }, 45_000);
+}
+
+async function readCollectionByWishlistCount(limit = 4) {
+  try {
+    const cards = normalizeCollection(await readLastByChild("cards", "wishlistCount", Math.max(limit, 12)));
+    return topWishlistedEntriesFromCards(cards, {}, limit);
+  } catch (error) {
+    warnOnce("collection:cards:wishlistCount", "[Website data] Firebase wishlist-count card query failed.", error);
+    return [];
+  }
 }
 
 function cardDate(card) {
@@ -300,7 +338,7 @@ function decorateCards(cards, wishlistLeaderboard = {}) {
     .filter((card) => card && card.active !== false)
     .map((card) => ({
       card,
-      count: Number(wishlistLeaderboard?.[card.id] || 0),
+      count: cardWishlistCount(card, wishlistLeaderboard?.[card.id]),
       createdAt: cardDate(card)
     }));
 }
@@ -319,7 +357,13 @@ function pickUnique(entries, limit, seen = new Set()) {
 
 function buildShowcase(cards, wishlistLeaderboard, limit) {
   const entries = decorateCards(cards, wishlistLeaderboard);
-  const topWishlisted = pickUnique([...entries].sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))), limit, new Set());
+  const topWishlisted = pickUnique(
+    [...entries]
+      .filter((entry) => Number(entry.count || 0) > 0)
+      .sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))),
+    limit,
+    new Set()
+  );
   const rareFinds = pickUnique([...entries].sort((left, right) => {
     const styleRank = { gold: 3, violet: 2, azure: 1 };
     return (styleRank[right.card?.style] || 0) - (styleRank[left.card?.style] || 0) || right.count - left.count;
@@ -609,17 +653,13 @@ export function subscribeTopWishlistedCards(limit = 3, onNext) {
   let cards = {};
   let wishlistLeaderboard = {};
   const emit = (status = dataStatuses.live) => {
-    const entries = Object.entries(normalizeCollection(wishlistLeaderboard))
-      .map(([cardId, count]) => ({ cardId: String(cardId), count: Number(count || 0), card: cards?.[cardId] }))
-      .filter((entry) => entry.card && entry.count > 0)
-      .sort((left, right) => right.count - left.count || String(left.card?.name || "").localeCompare(String(right.card?.name || "")))
-      .slice(0, limit);
+    const entries = topWishlistedEntriesFromCards(cards, wishlistLeaderboard, limit);
     if (entries.length || hasEntries(wishlistLeaderboard) || !fallbackEntries.length) onNext(entries, status);
     else onNext(fallbackEntries, dataStatuses.fallback);
   };
 
   const unsubscribers = [
-    subscribeFirst("cards", 500, (value) => {
+    subscribeLastByChild("cards", "wishlistCount", Math.max(limit, 12), (value) => {
       const nextCards = normalizeCollection(value);
       if (hasEntries(nextCards)) {
         hasLiveCards = true;
@@ -627,6 +667,15 @@ export function subscribeTopWishlistedCards(limit = 3, onNext) {
         emit(dataStatuses.live);
       } else if (fallbackEntries.length) {
         onNext(fallbackEntries, dataStatuses.fallback);
+      }
+    }, (error) => warnOnce("listener:cards:topWishlist:ordered", "[Website data] Ordered cards listener failed.", error)),
+    subscribeFirst("cards", 500, (value) => {
+      if (hasLiveCards && hasEntries(cards)) return;
+      const nextCards = normalizeCollection(value);
+      if (hasEntries(nextCards)) {
+        hasLiveCards = true;
+        cards = nextCards;
+        emit(dataStatuses.live);
       }
     }, (error) => warnOnce("listener:cards:topWishlist", "[Website data] Cards listener failed.", error)),
     subscribeWishlistLeaderboardCounts((value, status) => {
