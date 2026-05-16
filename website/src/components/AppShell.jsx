@@ -5,12 +5,12 @@ import Button from "./Button.jsx";
 import { useAuthStore } from "../store/authStore.js";
 
 const nav = [
+  ["Home", "/"],
   ["Dashboard", "/dashboard"],
   ["Collection", "/collection"],
   ["Wishlist", "/wishlist"],
   ["Guilds", "/guilds"],
-  ["Guide", "/guide"],
-  ["Verify", "/verify"]
+  ["Guide", "/guide"]
 ];
 
 function navClass({ isActive }) {
@@ -52,6 +52,7 @@ export default function AppShell({ children }) {
             ) : (
               <>
                 {error ? <span className="max-w-56 text-right text-xs font-bold text-rose">{error}</span> : null}
+                <Link to="/verify"><Button variant="ghost" icon={ShieldCheck}>Verify</Button></Link>
                 <Button onClick={login} icon={LogIn}>{loading ? "Loading" : "Login"}</Button>
               </>
             )}
@@ -68,6 +69,7 @@ export default function AppShell({ children }) {
               {nav.map(([label, path]) => (
                 <Link key={path} to={path} onClick={() => setOpen(false)} className="rounded-lg bg-white/[0.04] px-3 py-2 font-black text-white/78">{label}</Link>
               ))}
+              <Link to="/verify" onClick={() => setOpen(false)} className="rounded-lg bg-white/[0.04] px-3 py-2 font-black text-white/78">Verify</Link>
               <Button onClick={user ? logout : login} icon={user ? LogOut : LogIn} variant={user ? "ghost" : "primary"}>{user ? "Logout" : loading ? "Loading" : "Login"}</Button>
               {error ? <div className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-sm text-rose">{error}</div> : null}
             </div>
@@ -77,9 +79,20 @@ export default function AppShell({ children }) {
 
       <main className="relative z-10">{children}</main>
 
-      <footer className="relative z-10 border-t border-white/10 px-4 py-8 text-center text-sm text-white/48">
-        <ShieldCheck className="mx-auto mb-3 h-5 w-5 text-cyan" />
-        Aron shows public bot data only. Verification stays handled by the existing secure backend.
+      <footer className="relative z-10 border-t border-white/10 px-4 py-8 text-sm text-white/48">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="h-5 w-5 text-cyan" />
+            <span>Aron public bot website</span>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 font-bold">
+            <Link to="/verify" className="hover:text-white">Verify</Link>
+            <Link to="/appeal" className="hover:text-white">Appeal</Link>
+            <Link to="/support" className="hover:text-white">Support</Link>
+            <Link to="/terms" className="hover:text-white">T&C</Link>
+            <Link to="/privacy" className="hover:text-white">Privacy</Link>
+          </div>
+        </div>
       </footer>
     </div>
   );
