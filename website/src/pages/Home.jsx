@@ -4,18 +4,27 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import Page from "../components/Page.jsx";
 import Button from "../components/Button.jsx";
+import DataStatus from "../components/DataStatus.jsx";
 import StatCard from "../components/StatCard.jsx";
 import CardTile from "../components/CardTile.jsx";
-import { subscribeCardShowcase, subscribeSiteStats } from "../lib/data.js";
+import { dataStatuses, subscribeCardShowcase, subscribeSiteStats } from "../lib/data.js";
 
 const emptyShowcase = { featured: [], topWishlisted: [], rareFinds: [], recentlyAdded: [] };
 
 export default function Home() {
   const [stats, setStats] = useState({ players: 0, cards: 0, copies: 0, guilds: 0 });
   const [showcase, setShowcase] = useState(emptyShowcase);
+  const [statsStatus, setStatsStatus] = useState(dataStatuses.loading);
+  const [showcaseStatus, setShowcaseStatus] = useState(dataStatuses.loading);
 
-  useEffect(() => subscribeSiteStats(setStats), []);
-  useEffect(() => subscribeCardShowcase(6, (value) => setShowcase({ ...emptyShowcase, ...value })), []);
+  useEffect(() => subscribeSiteStats((value, status) => {
+    setStats(value);
+    setStatsStatus(status || dataStatuses.live);
+  }), []);
+  useEffect(() => subscribeCardShowcase(6, (value, status) => {
+    setShowcase({ ...emptyShowcase, ...value });
+    setShowcaseStatus(status || dataStatuses.live);
+  }), []);
 
   const heroCards = showcase.featured.slice(0, 3);
 
@@ -25,6 +34,10 @@ export default function Home() {
         <div className="relative z-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-rose/30 bg-rose/10 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-rose">
             <Sparkles className="h-4 w-4" /> Premium Discord collection
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <DataStatus status={statsStatus} />
+            <DataStatus status={showcaseStatus} />
           </div>
           <h1 className="mt-6 text-6xl font-black leading-[0.9] sm:text-7xl lg:text-8xl">ARON</h1>
           <p className="mt-4 bg-gradient-to-r from-white via-rose-100 to-cyan bg-clip-text text-4xl font-black leading-tight text-transparent sm:text-5xl">
@@ -76,11 +89,11 @@ export default function Home() {
         <StatCard label="Guilds" value={stats.guilds} icon={Swords} />
       </section>
 
-      <CardSection title="Featured Cards" eyebrow="Showcase" cards={showcase.featured} />
-      <CardSection title="Top Wishlisted" eyebrow="Player demand" cards={showcase.topWishlisted} />
+      <CardSection title="Featured Cards" eyebrow="Showcase" cards={showcase.featured} status={showcaseStatus} />
+      <CardSection title="Top Wishlisted" eyebrow="Player demand" cards={showcase.topWishlisted} status={showcaseStatus} />
       <div className="grid gap-8 lg:grid-cols-2">
-        <CardSection title="Rare Finds" eyebrow="Premium styles" cards={showcase.rareFinds.slice(0, 4)} compact />
-        <CardSection title="Recently Added" eyebrow="Fresh gallery" cards={showcase.recentlyAdded.slice(0, 4)} compact />
+        <CardSection title="Rare Finds" eyebrow="Premium styles" cards={showcase.rareFinds.slice(0, 4)} status={showcaseStatus} compact />
+        <CardSection title="Recently Added" eyebrow="Fresh gallery" cards={showcase.recentlyAdded.slice(0, 4)} status={showcaseStatus} compact />
       </div>
 
       <section className="mt-12 grid gap-4 md:grid-cols-3">
@@ -100,13 +113,14 @@ export default function Home() {
   );
 }
 
-function CardSection({ title, eyebrow, cards, compact = false }) {
+function CardSection({ title, eyebrow, cards, status, compact = false }) {
   return (
     <section className="mb-10">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
           <div className="text-xs font-black uppercase tracking-[0.22em] text-rose">{eyebrow}</div>
           <h2 className="mt-2 text-2xl font-black sm:text-3xl">{title}</h2>
+          <DataStatus status={status} className="mt-3" />
         </div>
         <Link to="/collection" className="hidden text-sm font-bold text-white/58 transition hover:text-white sm:block">View all</Link>
       </div>
