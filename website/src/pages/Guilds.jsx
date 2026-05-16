@@ -1,17 +1,23 @@
 import { Swords, Users } from "lucide-react";
 import { useEffect, useState } from "react";
+import DataStatus from "../components/DataStatus.jsx";
 import Page from "../components/Page.jsx";
-import { subscribeGuildsPage } from "../lib/data.js";
+import { dataStatuses, subscribeGuildsPage } from "../lib/data.js";
 import { fullNumber } from "../lib/format.js";
 
 export default function Guilds() {
   const [guilds, setGuilds] = useState({});
-  useEffect(() => subscribeGuildsPage(80, setGuilds), []);
+  const [dataStatus, setDataStatus] = useState(dataStatuses.loading);
+  useEffect(() => subscribeGuildsPage(80, (value, status) => {
+    setGuilds(value);
+    setDataStatus(status || dataStatuses.live);
+  }), []);
   return (
     <Page>
       <div className="mb-6">
         <div className="text-sm font-black uppercase tracking-[0.24em] text-cyan"><Swords className="mr-2 inline h-4 w-4" />Guild rankings</div>
         <h1 className="mt-2 text-4xl font-black">Guild hall</h1>
+        <DataStatus status={dataStatus} className="mt-4" />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {Object.values(guilds).map((guild) => (
@@ -25,6 +31,7 @@ export default function Guilds() {
             </div>
           </article>
         ))}
+        {!Object.keys(guilds).length ? <div className="col-span-full rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-white/56">Coming soon when public guild data is available.</div> : null}
       </div>
     </Page>
   );
