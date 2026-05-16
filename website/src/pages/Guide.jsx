@@ -10,21 +10,22 @@ import {
   UserRound,
   Users
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Page from "../components/Page.jsx";
 
-const sidebarItems = [
-  "Welcome",
-  "Getting Started",
-  "Commands",
-  "Cards",
-  "Drops",
-  "Wishlist",
-  "Trading",
-  "Guilds",
-  "Events",
-  "Profile",
-  "Verification"
+const guideNavItems = [
+  { label: "Welcome", href: "#welcome" },
+  { label: "Getting Started", href: "#getting-started" },
+  { label: "Commands", href: "#commands" },
+  { label: "Cards", href: "#cards" },
+  { label: "Drops", href: "#drops" },
+  { label: "Wishlist", href: "#wishlist" },
+  { label: "Trading", href: "#trading" },
+  { label: "Guilds", href: "#guilds" },
+  { label: "Events", href: "#events" },
+  { label: "Profile", href: "#profile" },
+  { label: "Verification", href: "#verification" }
 ];
 
 const categoryCards = [
@@ -44,10 +45,34 @@ const articleSections = [
   ["Wishlist", "Wishlist activity powers public demand rankings. The website reads live Firebase counts where available and falls back safely when older data is present."],
   ["Trading", "Trades should be handled through the bot flow so both players review and confirm before anything changes."],
   ["Guilds", "Guilds let players group up, compare progress, and appear in public rankings using the same Firebase-backed data as the rest of the website."],
+  ["Events", "Events bring limited-time cards, seasonal rewards, and collection goals into ARON while keeping event actions inside Discord."],
+  ["Profile", "Profiles summarize public player progress, guild membership, collection highlights, wishlist activity, and verification status where available."],
   ["Verification", "Verification keeps using the existing ARON backend and auth flow. Public pages do not replace bot-side account safety checks."]
 ];
 
 export default function Guide() {
+  const [activeSection, setActiveSection] = useState("welcome");
+
+  useEffect(() => {
+    const hashTarget = window.location.hash.match(/#\/guide#([a-z0-9-]+)$/)?.[1];
+    if (!hashTarget) return;
+    const section = document.getElementById(hashTarget);
+    if (!section) return;
+    setActiveSection(hashTarget);
+    window.requestAnimationFrame(() => section.scrollIntoView({ block: "start" }));
+  }, []);
+
+  const handleSectionLink = (event, href) => {
+    event.preventDefault();
+    const sectionId = href.replace(/^#/, "");
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+
+    setActiveSection(sectionId);
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/guide#${sectionId}`);
+  };
+
   return (
     <Page className="pb-16">
       <div className="grid gap-8 lg:grid-cols-[230px_minmax(0,1fr)_230px]">
@@ -55,9 +80,14 @@ export default function Guide() {
           <div className="sticky top-24 rounded-lg border border-white/10 bg-panel/80 p-3">
             <div className="px-3 py-2 text-xs font-black uppercase tracking-[0.18em] text-cyan">ARON Guide</div>
             <nav className="mt-2 grid gap-1">
-              {sidebarItems.map((item) => (
-                <a key={item} href={`#${slug(item)}`} className="rounded-md px-3 py-2 text-sm font-bold text-white/58 transition hover:bg-white/[0.06] hover:text-white">
-                  {item}
+              {guideNavItems.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={(event) => handleSectionLink(event, item.href)}
+                  className={`rounded-md px-3 py-2 text-sm font-bold transition hover:bg-white/[0.06] hover:text-white ${activeSection === item.href.slice(1) ? "bg-white/10 text-white" : "text-white/58"}`}
+                >
+                  {item.label}
                 </a>
               ))}
             </nav>
@@ -65,7 +95,7 @@ export default function Guide() {
         </aside>
 
         <main className="min-w-0">
-          <section id="welcome" className="rounded-lg border border-white/10 bg-panel/80 p-5 sm:p-8">
+          <section id="welcome" className="scroll-mt-28 rounded-lg border border-white/10 bg-panel/80 p-5 sm:p-8">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md border border-cyan/30 bg-cyan/10 px-2.5 py-1 text-xs font-black uppercase tracking-[0.16em] text-cyan">Documentation</span>
               <span className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-black uppercase tracking-[0.16em] text-white/48">Discord Card Index</span>
@@ -85,7 +115,7 @@ export default function Guide() {
 
           <section className="mt-6 grid gap-4 md:grid-cols-2">
             {categoryCards.map(([title, text, Icon]) => (
-              <a key={title} href={`#${slug(title)}`} className="data-card rounded-lg border border-white/10 bg-white/[0.04] p-5">
+              <a key={title} href={`#${slug(title)}`} onClick={(event) => handleSectionLink(event, `#${slug(title)}`)} className="data-card rounded-lg border border-white/10 bg-white/[0.04] p-5">
                 <Icon className="h-6 w-6 text-cyan" />
                 <h2 className="mt-4 text-2xl font-black">{title}</h2>
                 <p className="mt-2 leading-7 text-white/60">{text}</p>
@@ -113,9 +143,15 @@ export default function Guide() {
           <div className="sticky top-24 rounded-lg border border-white/10 bg-panel/80 p-4">
             <div className="text-xs font-black uppercase tracking-[0.18em] text-cyan">On this page</div>
             <nav className="mt-4 grid gap-3 text-sm font-bold text-white/58">
-              <a href="#welcome" className="hover:text-white">Welcome</a>
-              {articleSections.slice(0, 6).map(([title]) => (
-                <a key={title} href={`#${slug(title)}`} className="hover:text-white">{title}</a>
+              {guideNavItems.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={(event) => handleSectionLink(event, item.href)}
+                  className={`transition hover:text-white ${activeSection === item.href.slice(1) ? "text-white" : ""}`}
+                >
+                  {item.label}
+                </a>
               ))}
             </nav>
             <div className="mt-6 rounded-lg border border-cyan/18 bg-cyan/[0.08] p-4">
