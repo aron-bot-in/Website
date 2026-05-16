@@ -198,8 +198,14 @@ function statsFromMetadata(metadata = {}) {
 }
 
 async function readWishlistLeaderboardCountsWithSource() {
-  const liveCounts = normalizeCollection(await readCollection("meta/wishlistLeaderboard", 500, ["meta/wishlistLeaderboard"]));
-  if (hasEntries(liveCounts)) return { value: liveCounts, status: dataStatuses.live };
+  if (isFirebaseConfigured) {
+    try {
+      const liveCounts = normalizeCollection(await readFirst("meta/wishlistLeaderboard", 500));
+      if (hasEntries(liveCounts)) return { value: liveCounts, status: dataStatuses.live };
+    } catch (error) {
+      warnOnce("read:meta/wishlistLeaderboard", "[Website data] Firebase wishlist leaderboard read failed.", error);
+    }
+  }
 
   const snapshotCounts = normalizeCollection(await readSnapshotValue("wishlistLeaderboard", {}));
   if (hasEntries(snapshotCounts)) return { value: snapshotCounts, status: dataStatuses.fallback };
@@ -233,7 +239,7 @@ export async function getSiteStats() {
     const metadataStats = statsFromMetadata(metadata);
 
     return {
-      players: firstCount(metadataStats.players, Object.keys(normalizeCollection(users)).length, snapshotStats?.players),
+      players: firstCount(metadataStats.players, snapshotStats?.players, Object.keys(normalizeCollection(users)).length),
       cards: firstCount(metadataStats.cards, Object.keys(normalizeCollection(cards)).length, snapshotStats?.cards),
       copies: firstCount(metadataStats.copies, snapshotStats?.copies),
       guilds: firstCount(metadataStats.guilds, Object.keys(normalizeCollection(guilds)).length, snapshotStats?.guilds)
@@ -416,7 +422,7 @@ export function subscribeSiteStats(onNext) {
   let liveSeen = false;
 
   const emit = (status = liveSeen ? dataStatuses.live : dataStatuses.fallback) => onNext({
-    players: firstCount(metadataStats.players, Object.keys(normalizeCollection(users)).length, snapshotStats.players),
+    players: firstCount(metadataStats.players, snapshotStats.players, Object.keys(normalizeCollection(users)).length),
     cards: firstCount(metadataStats.cards, Object.keys(normalizeCollection(cards)).length, snapshotStats.cards),
     copies: firstCount(metadataStats.copies, snapshotStats.copies),
     guilds: firstCount(metadataStats.guilds, Object.keys(normalizeCollection(guilds)).length, snapshotStats.guilds)
