@@ -2,19 +2,24 @@ import { BadgeCheck, Coins, Gem, Heart, Layers3, Sparkles, Star, Timer, Trophy, 
 import { useEffect, useMemo, useState } from "react";
 import Page from "../components/Page.jsx";
 import RequireLogin from "../components/RequireLogin.jsx";
+import DataStatus from "../components/DataStatus.jsx";
 import StatCard from "../components/StatCard.jsx";
 import CardTile from "../components/CardTile.jsx";
-import { subscribeDashboard } from "../lib/data.js";
+import { dataStatuses, subscribeDashboard } from "../lib/data.js";
 import { fullNumber, fromNow } from "../lib/format.js";
 import { useAuthStore } from "../store/authStore.js";
 
 export default function Dashboard() {
   const { identity } = useAuthStore();
   const [data, setData] = useState(null);
+  const [dataStatus, setDataStatus] = useState(dataStatuses.loading);
 
   useEffect(() => {
     if (!identity?.discordId) return undefined;
-    return subscribeDashboard(identity.discordId, setData);
+    return subscribeDashboard(identity.discordId, (value, status) => {
+      setData(value);
+      setDataStatus(status || dataStatuses.live);
+    });
   }, [identity?.discordId]);
 
   const user = data?.user || {};
@@ -43,9 +48,10 @@ export default function Dashboard() {
               <div className="text-xs font-black uppercase tracking-[0.24em] text-rose">Player dashboard</div>
               <h1 className="mt-2 text-4xl font-black sm:text-5xl">{identity?.username || user.username || "Aron Player"}</h1>
               <p className="mt-3 max-w-2xl text-white/64">Your collection, wishlist, guild, and progress in one cleaner player hub.</p>
+              <DataStatus status={dataStatus} className="mt-4" />
             </div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-4 py-2 text-sm font-black text-cyan">
-              <BadgeCheck className="h-4 w-4" /> Public profile ready
+              <BadgeCheck className="h-4 w-4" /> {user.id ? "Public profile ready" : "Public profile pending"}
             </div>
           </div>
         </section>
@@ -68,7 +74,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {topInventory.map((copy) => <CardTile key={copy.code || `${copy.cardId}-${copy.gen}`} copy={copy} card={cards[copy.cardId]} wished={wishlist.includes(copy.cardId)} count={data?.wishlistLeaderboard?.[copy.cardId]} />)}
-              {!topInventory.length ? <EmptyCard text="No public inventory copies found yet." /> : null}
+              {!topInventory.length ? <EmptyCard status={dataStatus} /> : null}
             </div>
           </div>
 
@@ -129,6 +135,11 @@ function InfoPanel({ title, icon: Icon, rows }) {
   );
 }
 
-function EmptyCard({ text }) {
+function EmptyCard({ status }) {
+  const text = status?.source === "loading"
+    ? "Loading public inventory."
+    : status?.source === "fallback"
+      ? "No cached public inventory copies found."
+      : "No public inventory copies found yet.";
   return <div className="col-span-full rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-white/56">{text}</div>;
 }
