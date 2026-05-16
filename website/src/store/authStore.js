@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { syncWebUser } from "../lib/data.js";
 import { useEffect } from "react";
 import { clearDiscordSession, finishDiscordLogin, getStoredDiscordSession, startDiscordLogin } from "../lib/discordAuth.js";
 
@@ -24,11 +23,6 @@ export const useAuthStore = create((set, get) => ({
   setSession: async (session) => {
     const identity = session?.user || null;
     set({ user: session, identity, loading: false });
-    if (session && identity?.discordId) {
-      await syncWebUser(identity).catch((error) => {
-        console.warn("[Auth] Optional web user sync failed:", error);
-      });
-    }
   },
   setError: (error) => set({ error, loading: false }),
   getDiscordId: () => get().identity?.discordId || ""
