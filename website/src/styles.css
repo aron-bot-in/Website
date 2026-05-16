@@ -18,8 +18,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 18% 12%, rgba(64, 230, 255, 0.16), transparent 28rem),
-    radial-gradient(circle at 82% 18%, rgba(255, 79, 184, 0.13), transparent 28rem),
+    radial-gradient(circle at 18% 12%, rgba(255, 79, 184, 0.18), transparent 28rem),
+    radial-gradient(circle at 82% 18%, rgba(157, 101, 255, 0.14), transparent 28rem),
+    radial-gradient(circle at 50% 42%, rgba(64, 230, 255, 0.08), transparent 24rem),
     linear-gradient(180deg, #05070d 0%, #0a0d16 48%, #05070d 100%);
   color: #f8fbff;
 }
@@ -31,7 +32,9 @@ a {
 
 .glass {
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(135deg, rgba(14, 20, 35, 0.82), rgba(11, 14, 25, 0.62));
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 79, 184, 0.08), transparent 16rem),
+    linear-gradient(135deg, rgba(14, 20, 35, 0.84), rgba(11, 14, 25, 0.66));
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
   backdrop-filter: blur(20px);
 }
@@ -74,13 +77,13 @@ a {
 
 .card-tilt {
   transform-style: preserve-3d;
-  transition: transform 240ms ease, border-color 240ms ease, box-shadow 240ms ease;
+  transition: transform 240ms ease, border-color 240ms ease, box-shadow 240ms ease, background 240ms ease;
 }
 
 .card-tilt:hover {
   transform: translateY(-8px) rotateX(4deg) rotateY(-5deg);
-  border-color: rgba(64, 230, 255, 0.48);
-  box-shadow: 0 28px 70px rgba(64, 230, 255, 0.13);
+  border-color: rgba(255, 79, 184, 0.42);
+  box-shadow: 0 28px 70px rgba(255, 79, 184, 0.13), 0 0 34px rgba(64, 230, 255, 0.08);
 }
 
 .hero-radar {
@@ -124,5 +127,15 @@ a {
   .particle-field,
   .hero-radar {
     animation: none;
+  }
+
+  .shine::after {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .card-tilt:hover {
+    transform: translateY(-4px);
   }
 }
