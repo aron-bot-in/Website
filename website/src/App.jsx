@@ -7,6 +7,8 @@ import Verify from "./pages/Verify.jsx";
 import PublicProfile from "./pages/PublicProfile.jsx";
 import Collection from "./pages/Collection.jsx";
 import Wishlist from "./pages/Wishlist.jsx";
+import Cosmetics from "./pages/Cosmetics.jsx";
+import Guide from "./pages/Guide.jsx";
 import Guilds from "./pages/Guilds.jsx";
 import Invite from "./pages/Invite.jsx";
 import Support from "./pages/Support.jsx";
@@ -32,6 +34,8 @@ export default function App() {
           <Route path="/user/:id" element={<PublicProfile />} />
           <Route path="/collection" element={<Collection />} />
           <Route path="/wishlist" element={<Wishlist />} />
+          <Route path="/cosmetics" element={<Cosmetics />} />
+          <Route path="/guide" element={<Guide />} />
           <Route path="/guilds" element={<Guilds />} />
           <Route path="/invite" element={<Invite />} />
           <Route path="/support" element={<Support />} />
