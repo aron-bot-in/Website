@@ -1,0 +1,151 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "botData": {
+      ".read": false,
+      ".write": false,
+      "metadata": {
+        ".read": true,
+        ".write": false
+      },
+      "cards": {
+        ".read": true,
+        ".write": false,
+        ".indexOn": [".key"]
+      },
+      "guilds": {
+        ".read": true,
+        ".write": false,
+        ".indexOn": [".key"]
+      },
+      "publicUsers": {
+        "$discordId": {
+          ".read": true,
+          ".write": false
+        }
+      },
+      "webUsers": {
+        "$discordId": {
+          ".read": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && auth.token.firebase.identities['oidc.discord'][0] == $discordId",
+          ".write": "auth != null && auth.token.firebase.sign_in_provider == 'oidc.discord' && auth.token.firebase.identities['oidc.discord'][0] == $discordId",
+          ".validate": "newData.hasChildren(['discordId', 'username', 'lastLoginAt', 'provider']) && newData.child('discordId').val() == $discordId && newData.child('provider').val() == 'discord-oauth2'"
+        }
+      },
+      "meta": {
+        "wishlistLeaderboard": {
+          ".read": true,
+          ".write": false
+        },
+        "whitelistedboard": {
+          ".read": true,
+          ".write": false
+        },
+        "accountSecurity": {
+          ".read": false,
+          ".write": false
+        },
+        "adminUserIds": {
+          ".read": false,
+          ".write": false
+        },
+        "adminAudit": {
+          ".read": false,
+          ".write": false
+        },
+        "botBans": {
+          ".read": false,
+          ".write": false
+        },
+        "disabledCommands": {
+          ".read": false,
+          ".write": false
+        },
+        "channelDisabledCommands": {
+          ".read": false,
+          ".write": false
+        },
+        "$other": {
+          ".read": false,
+          ".write": false
+        }
+      },
+      "users": {
+        ".read": false,
+        ".write": false
+      },
+      "codes": {
+        ".read": false,
+        ".write": false
+      },
+      "claimedGens": {
+        ".read": false,
+        ".write": false
+      },
+      "security": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationTokens": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationOAuthStates": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationSessions": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationAudit": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationUsers": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationAttempts": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationAttemptsByUser": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationFingerprints": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationDeviceSummaries": {
+        ".read": false,
+        ".write": false
+      },
+      "verificationIpHashes": {
+        ".read": false,
+        ".write": false
+      },
+      "riskEvents": {
+        ".read": false,
+        ".write": false
+      },
+      "tokens": {
+        ".read": false,
+        ".write": false
+      },
+      "apiKeys": {
+        ".read": false,
+        ".write": false
+      },
+      "secrets": {
+        ".read": false,
+        ".write": false
+      },
+      "admin": {
+        ".read": false,
+        ".write": false
+      }
+    }
+  }
+}
