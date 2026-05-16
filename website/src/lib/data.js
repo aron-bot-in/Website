@@ -206,6 +206,52 @@ export async function getTopWishlistedCards(limit = 3) {
   }, 45_000);
 }
 
+function cardDate(card) {
+  const value = Date.parse(card?.updatedAt || card?.createdAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function decorateCards(cards, wishlistLeaderboard = {}) {
+  return Object.values(normalizeCollection(cards))
+    .filter((card) => card && card.active !== false)
+    .map((card) => ({
+      card,
+      count: Number(wishlistLeaderboard?.[card.id] || 0),
+      createdAt: cardDate(card)
+    }));
+}
+
+function pickUnique(entries, limit, seen = new Set()) {
+  const picked = [];
+  for (const entry of entries) {
+    const id = String(entry?.card?.id || "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    picked.push(entry);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
+export async function getCardShowcase(limit = 6) {
+  return cached(`cardShowcase:${limit}`, async () => {
+    const [cards, wishlistLeaderboard] = await Promise.all([
+      readCollection("cards", 500),
+      getWishlistLeaderboardCounts()
+    ]);
+    const entries = decorateCards(cards, wishlistLeaderboard);
+    const seen = new Set();
+    const topWishlisted = pickUnique([...entries].sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))), limit, seen);
+    const rareFinds = pickUnique([...entries].sort((left, right) => {
+      const styleRank = { gold: 3, violet: 2, azure: 1 };
+      return (styleRank[right.card?.style] || 0) - (styleRank[left.card?.style] || 0) || right.count - left.count;
+    }), limit, new Set());
+    const recentlyAdded = pickUnique([...entries].sort((left, right) => right.createdAt - left.createdAt), limit, new Set());
+    const featured = pickUnique([...topWishlisted, ...rareFinds, ...recentlyAdded, ...entries], limit, new Set());
+    return { featured, topWishlisted, rareFinds, recentlyAdded };
+  }, 45_000);
+}
+
 export async function getDashboard(discordId) {
   if (!discordId) return null;
   return cached(`dashboard:${discordId}`, async () => {
@@ -400,6 +446,37 @@ export function subscribeTopWishlistedCards(limit = 3, onNext) {
       .sort((left, right) => right.count - left.count || String(left.card?.name || "").localeCompare(String(right.card?.name || "")))
       .slice(0, limit);
     onNext(entries);
+  };
+
+  const unsubscribers = [
+    subscribeFirst("cards", 500, (value) => {
+      cards = normalizeCollection(value);
+      emit();
+    }, (error) => console.warn("[Website data] Cards listener failed:", error)),
+    subscribeWishlistLeaderboardCounts((value) => {
+      wishlistLeaderboard = normalizeCollection(value);
+      emit();
+    })
+  ];
+
+  return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
+}
+
+export function subscribeCardShowcase(limit = 6, onNext) {
+  getCardShowcase(limit).then(onNext).catch(() => {});
+
+  let cards = {};
+  let wishlistLeaderboard = {};
+  const emit = () => {
+    const entries = decorateCards(cards, wishlistLeaderboard);
+    const topWishlisted = pickUnique([...entries].sort((left, right) => right.count - left.count || String(left.card.name || "").localeCompare(String(right.card.name || ""))), limit, new Set());
+    const rareFinds = pickUnique([...entries].sort((left, right) => {
+      const styleRank = { gold: 3, violet: 2, azure: 1 };
+      return (styleRank[right.card?.style] || 0) - (styleRank[left.card?.style] || 0) || right.count - left.count;
+    }), limit, new Set());
+    const recentlyAdded = pickUnique([...entries].sort((left, right) => right.createdAt - left.createdAt), limit, new Set());
+    const featured = pickUnique([...topWishlisted, ...rareFinds, ...recentlyAdded, ...entries], limit, new Set());
+    onNext({ featured, topWishlisted, rareFinds, recentlyAdded });
   };
 
   const unsubscribers = [
