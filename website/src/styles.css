@@ -1,0 +1,191 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #0b0b12;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #0b0b12;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 22% 8%, rgba(143, 0, 242, 0.20), transparent 28%),
+    radial-gradient(circle at 82% 18%, rgba(134, 240, 240, 0.13), transparent 26%),
+    radial-gradient(circle at 58% 72%, rgba(240, 143, 176, 0.11), transparent 28%),
+    linear-gradient(180deg, #080810 0%, #101018 46%, #0b0b12 100%);
+  background-size: 44px 44px, 44px 44px, auto;
+  color: #f8fbff;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.site-grid {
+  background:
+    linear-gradient(rgba(134, 240, 240, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240, 143, 176, 0.04) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, black 0%, rgba(0, 0, 0, 0.35) 56%, transparent 100%);
+}
+
+.aurora-field {
+  background:
+    radial-gradient(circle at 18% 24%, rgba(143, 0, 242, 0.18), transparent 24%),
+    radial-gradient(circle at 76% 16%, rgba(134, 240, 240, 0.12), transparent 22%),
+    radial-gradient(circle at 78% 78%, rgba(240, 143, 176, 0.11), transparent 25%);
+  filter: saturate(130%);
+  opacity: 0.86;
+}
+
+.particle-field {
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.58) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(134, 240, 240, 0.42) 0 1px, transparent 1.5px);
+  background-position: 0 0, 28px 36px;
+  background-size: 104px 104px, 132px 132px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.78), transparent 72%);
+  opacity: 0.18;
+  animation: driftParticles 28s linear infinite;
+}
+
+.glass,
+.verify-rules-panel {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(16, 16, 24, 0.86);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42), 0 0 42px rgba(143, 0, 242, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.hero-shell {
+  background:
+    radial-gradient(circle at 80% 15%, rgba(134, 240, 240, 0.16), transparent 28%),
+    radial-gradient(circle at 16% 74%, rgba(240, 143, 176, 0.12), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
+    rgba(16, 16, 24, 0.72);
+}
+
+.data-card {
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.data-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(64, 230, 255, 0.28);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.44), 0 0 26px rgba(134, 240, 240, 0.08);
+}
+
+.command-pill,
+.feature-tile {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.feature-tile {
+  min-height: 164px;
+}
+
+.shadow-card {
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+}
+
+.premium-panel {
+  border: 1px solid rgba(183, 183, 194, 0.16);
+  background: rgba(16, 16, 24, 0.72);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
+}
+
+.ghost-wordmark {
+  background: linear-gradient(180deg, rgba(245, 247, 251, 0.12), rgba(245, 247, 251, 0.015));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 0.82;
+}
+
+.docs-grid {
+  grid-template-columns: 270px minmax(0, 1fr) 230px;
+}
+
+.docs-prose h2 {
+  scroll-margin-top: 112px;
+}
+
+.floating-card {
+  transform-style: preserve-3d;
+  animation: floatCard 6.4s ease-in-out infinite;
+}
+
+.card-b {
+  animation-delay: -1.8s;
+}
+
+.card-c {
+  animation-delay: -3.1s;
+}
+
+@keyframes floatCard {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+
+  50% {
+    translate: 0 -12px;
+  }
+}
+
+@keyframes driftParticles {
+  from {
+    background-position: 0 0, 28px 36px;
+  }
+
+  to {
+    background-position: 104px 104px, 160px 168px;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .data-card:hover {
+    transform: none;
+  }
+}
