@@ -34,7 +34,11 @@ export async function collectVerificationFingerprint() {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     platform: navigator.platform || "",
     screen: `${screen.width}x${screen.height}x${screen.colorDepth}`,
-    language: navigator.language || ""
+    availableScreen: `${screen.availWidth}x${screen.availHeight}`,
+    language: navigator.language || "",
+    hardwareConcurrency: String(navigator.hardwareConcurrency || ""),
+    deviceMemory: String(navigator.deviceMemory || ""),
+    maxTouchPoints: String(navigator.maxTouchPoints || "")
   };
 }
 
